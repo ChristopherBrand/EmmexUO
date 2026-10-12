@@ -96,39 +96,32 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/')
       with:
         files: crossuo-linux-*.tgz
-  MacOSX:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [macos-10.15, macos-11]
+  MacOS:
+    # macos-15 runners are Apple Silicon; builds a native arm64 CrossUO.app
+    runs-on: macos-15
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
       with:
-        fetch-depth: 1
-    - name: ccache
-      uses: hendrikmuhs/ccache-action@v1
-      with:
-        key: ${{ matrix.os }}
-    - name: ccache setup
-      run: export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+        fetch-depth: 0 # make_app.sh uses `git describe` for the bundle version
+    - name: tools
+      run: brew install ninja
     - name: configure
-      run: cmake -B build -S .  -DXUO_DEPLOY=On -DCMAKE_BUILD_TYPE=Release
+      run: cmake -B build -S . -G Ninja -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_BUILD_TYPE=Release
     - name: build
       run: cmake --build build
-    - name: package
-      if: startsWith(github.ref, 'refs/pull/') != true
-      run: ${GITHUB_WORKSPACE}/.github/package.sh ${{ github.ref }} Release clang
-    - name: release latest
-      uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/heads/master')
+    - name: bundle
+      run: |
+        tools/macos/make_app.sh build build/dist
+        ditto -c -k --keepParent build/dist/CrossUO.app crossuo-macos-arm64.zip
+    - uses: actions/upload-artifact@v4
       with:
-        tag_name: latest
-        files: crossuo-osx-latest.zip
+        name: crossuo-macos-arm64
+        path: crossuo-macos-arm64.zip
     - name: release tag
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: crossuo-osx-*.zip
+        files: crossuo-macos-arm64.zip
   Emscripten:
     runs-on: ubuntu-18.04
     steps:
