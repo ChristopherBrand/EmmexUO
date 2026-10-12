@@ -24,6 +24,15 @@ extern bool g_rendererDebugForceStateReset;
 extern uint32_t g_drawVAO;
 extern uint32_t g_drawVBO;
 extern size_t g_vboSize;
+struct GenericVertex;
+struct RenderState;
+// Drawable pixels per logical game pixel (Retina factor x UIScale). Viewport, scissor and
+// readback rectangles are in pixels and get multiplied by it; projections stay logical.
+// Always 1 while rendering into a framebuffer object, whose textures are logical-sized.
+float Render_PixelRatio(const RenderState *state);
+// Appends vertices to the streaming VBO (g_drawVBO) and returns the index of the first one,
+// for glDrawArrays(mode, first, count). Never overwrites data the GPU may still be reading.
+int RenderDraw_StreamVertices(const GenericVertex *vertices, int count);
 extern uint32_t _vibuffers[2];
 extern int _uAlphaTestEnabled;
 extern int _uAlphaRef;

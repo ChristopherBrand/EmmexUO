@@ -689,7 +689,12 @@ bool RenderState_SetViewParams(
     const int needed_height = scene_y + scene_height;
     const int bottom = window_height - needed_height;
 
-    if (forced ||
+    // the pixel ratio changes with UIScale or when moving between displays
+    static float s_lastPixelRatio = 0.0f;
+    const float pixelRatio = Render_PixelRatio(state);
+    const bool ratioChanged = !f32eq(pixelRatio, s_lastPixelRatio);
+    s_lastPixelRatio = pixelRatio;
+    if (forced || ratioChanged ||
         state->viewport.left != scene_x ||
         state->viewport.right != right ||
         state->viewport.bottom != bottom ||
@@ -715,7 +720,11 @@ bool RenderState_SetViewParams(
         const float scaledBottom = (scene_y + scene_height) * scene_scale;
         const float scaledTop = scene_y * scene_scale - (scaledBottom - (scene_y + scene_height));
 
-        glViewport(scene_x, bottom, scene_width, scene_height);
+        glViewport(
+            int(scene_x * pixelRatio),
+            int(bottom * pixelRatio),
+            int(scene_width * pixelRatio),
+            int(scene_height * pixelRatio));
         // TODO: gles - projection ortho view parms
         const auto projection = glm::ortho(
             scaledLeft,
@@ -766,7 +775,8 @@ bool RenderState_SetScissor(
         state->scissor.y = y;
         state->scissor.width = width;
         state->scissor.height = height;
-        GL_CHECK(glScissor(x, y, width, height));
+        const float r = Render_PixelRatio(state);
+        GL_CHECK(glScissor(int(x * r), int(y * r), int(width * r), int(height * r)));
     }
     return changed;
 }

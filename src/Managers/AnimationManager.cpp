@@ -4,6 +4,7 @@
 #include <common/utils.h>
 #include <common/str.h>
 #include "AnimationManager.h"
+#include <unordered_set>
 #include "MouseManager.h"
 #include "ConfigManager.h"
 #include "ColorManager.h"
@@ -471,7 +472,21 @@ void CAnimationManager::Draw(
         graphic = obj->GetGraphicForAnimation();
     }
 
-    assert(graphic < MAX_ANIMATIONS_DATA_INDEX_COUNT);
+    if (graphic >= MAX_ANIMATIONS_DATA_INDEX_COUNT)
+    {
+        // Not an animation id (e.g. an item graphic on an unexpected layer); indexing the
+        // animation table with it reads out of bounds. Skip it, and say so once per graphic.
+        static std::unordered_set<uint16_t> reported;
+        if (reported.insert(graphic).second)
+        {
+            Warning(
+                Client,
+                "skipping animation for 0x%08X: graphic 0x%04X is not an animation id",
+                obj->Serial,
+                graphic);
+        }
+        return;
+    }
     const auto anim = ExecuteAnimation({ graphic, Anim.Group, Anim.Direction }, g_Ticks);
     if (!anim)
     {

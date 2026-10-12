@@ -12,7 +12,12 @@
     #define GFX_GL_MAJOR 3
     #define GFX_GL_MINOR 2
     #if defined(__APPLE__)
+        // macOS core profile tops out at 4.1 / GLSL 1.50: no layout(location), so attribute
+        // locations are queried by name (glGetAttribLocation) instead.
         #define GL_SHADER_VERSION "150"
+        #define GL_SHADER_ATTRIBUTE(x) "in "
+        #define GL_SHADER_IN "in "
+        #define GL_SHADER_OUT "out "
     #else // #if defined(__APPLE__)
         #define GL_SHADER_VERSION "330"
     #define GL_SHADER_ATTRIBUTE(x) "layout (location = " #x " ) in "
@@ -117,6 +122,17 @@
         } \
     } while(0)
 
+#if defined(__APPLE__) && defined(USE_GL3)
+// GLSL 1.50 core (macOS) removed texture2D and gl_FragColor. The output is declared in
+// both stages; it is simply unused by the vertex shader.
+#define GL_SHADER_COMPAT \
+    "#define texture2D texture\n" \
+    "out vec4 xuo_FragColor;\n" \
+    "#define FRAG_COLOR xuo_FragColor\n"
+#else
+#define GL_SHADER_COMPAT "#define FRAG_COLOR gl_FragColor\n"
+#endif
+
 #define GL_SHADER_HEADER \
     "#version " GL_SHADER_VERSION "\n" \
     "#ifdef GL_ES\n" \
@@ -125,7 +141,8 @@
     "#else\n" \
     "precision mediump float;\n" \
     "#endif\n" \
-    "#endif\n"
+    "#endif\n" \
+    GL_SHADER_COMPAT
 #endif
 
 #if (__cplusplus >= 201100)

@@ -5,6 +5,7 @@
 #if defined(NEW_RENDERER_ENABLED) && (defined(USE_GL3) || defined(USE_GLES))
 #define RENDERER_INTERNAL
 #include "../Renderer/RenderInternal.h"
+#include "../Wisp/WispWindow.h"
 #include "Debug/RenderDebug.h"
 #include "../Utility/PerfMarker.h"
 #include <common/logging/logging.h>
@@ -135,8 +136,11 @@ bool Render_Init(SDL_Window *window)
     Info(Renderer, "    Shading: %s", glGetString(GL_SHADING_LANGUAGE_VERSION));
 
 #if defined(USE_GL3) && defined(OGL_DEBUGCONTEXT_ENABLED)
-    GLint maxStackDepth;
-    glGetIntegerv(GL_MAX_DEBUG_GROUP_STACK_DEPTH, &maxStackDepth);
+    GLint maxStackDepth = 0;
+    if (glPushDebugGroup != nullptr) // KHR_debug enum; INVALID_ENUM on macOS (GL 4.1)
+    {
+        glGetIntegerv(GL_MAX_DEBUG_GROUP_STACK_DEPTH, &maxStackDepth);
+    }
     Info(Renderer, "    Markers Depth: %d", maxStackDepth);
 #endif // #if defined(USE_GL3) && defined(OGL_DEBUGCONTEXT_ENABLED)
 
@@ -314,7 +318,9 @@ bool HACKRender_SetViewParams(const SetViewParamsCmd &cmd)
     int needed_height = cmd.scene_y + cmd.scene_height;
     int bottom = cmd.window_height - needed_height;
 
-    GL_CHECK(glViewport(cmd.scene_x, bottom, cmd.scene_width, cmd.scene_height));
+    const float r = Render_PixelRatio(nullptr);
+    GL_CHECK(glViewport(
+        int(cmd.scene_x * r), int(bottom * r), int(cmd.scene_width * r), int(cmd.scene_height * r)));
     // TODO: gles - ortho viewparms hack
     const auto projection = glm::ortho(
         float(cmd.scene_x),
@@ -466,11 +472,12 @@ bool Render_CreateShaderPipeline(
             return false;
         }
 
+        // Validation checks the program against the *current* GL state (e.g. a bound VAO in
+        // core profiles), so at load time it can fail for programs that link and draw fine.
         GL_CHECK(glValidateProgram(program));
         if (!validate_program(program, GL_VALIDATE_STATUS))
         {
-            Error(Renderer, "shader validate failed");
-            return false;
+            Warning(Renderer, "shader validation failed against the current GL state");
         }
         return true;
     };
@@ -751,6 +758,59 @@ void Render_ResetCmdList(RenderCmdList *cmdList, RenderState state)
 
     cmdList->remainingSize = cmdList->size;
     cmdList->state = state;
+}
+
+float Render_PixelRatio(const RenderState *state)
+{
+    if (state != nullptr && state->framebuffer.handle != RENDER_FRAMEBUFFER_INVALID)
+    {
+        return 1.0f;
+    }
+    int windowW = 0, windowH = 0, drawableW = 0, drawableH = 0;
+    SDL_GetWindowSize(g_render.window, &windowW, &windowH);
+    SDL_GL_GetDrawableSize(g_render.window, &drawableW, &drawableH);
+    const float retina = (windowW > 0 && drawableW > 0) ? float(drawableW) / float(windowW) : 1.0f;
+    const int uiScale = Wisp::g_WispWindow != nullptr ? Wisp::g_WispWindow->UIScale : 1;
+    return retina * float(uiScale);
+}
+
+// Streaming vertex upload. Every draw used to rewrite offset 0 of g_drawVBO with
+// glBufferSubData, which makes drivers that track buffer use (notably Apple's GL-on-Metal)
+// wait for the GPU to finish the previous draw: a CPU/GPU round trip per quad. Instead,
+// append to a ring and orphan the buffer when it wraps, so no write ever waits.
+static size_t s_streamOffset = 0;
+
+int RenderDraw_StreamVertices(const GenericVertex *vertices, int count)
+{
+    const size_t bytes = size_t(count) * sizeof(GenericVertex);
+    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, g_drawVBO));
+    if (s_streamOffset + bytes > g_vboSize)
+    {
+        // orphan: the driver hands back fresh storage instead of synchronizing
+        GL_CHECK(glBufferData(GL_ARRAY_BUFFER, g_vboSize, nullptr, GL_DYNAMIC_DRAW));
+        s_streamOffset = 0;
+    }
+#if defined(USE_GLES2)
+    GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, s_streamOffset, bytes, vertices));
+#else
+    void *dst = glMapBufferRange(
+        GL_ARRAY_BUFFER,
+        s_streamOffset,
+        bytes,
+        GL_MAP_WRITE_BIT | GL_MAP_UNSYNCHRONIZED_BIT | GL_MAP_INVALIDATE_RANGE_BIT);
+    if (dst != nullptr)
+    {
+        memcpy(dst, vertices, bytes);
+        glUnmapBuffer(GL_ARRAY_BUFFER);
+    }
+    else
+    {
+        GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, s_streamOffset, bytes, vertices));
+    }
+#endif
+    const int first = int(s_streamOffset / sizeof(GenericVertex));
+    s_streamOffset += bytes;
+    return first;
 }
 
 #endif // #if defined(NEW_RENDERER_ENABLED) && (defined(USE_GL3) || defined(USE_GLES))

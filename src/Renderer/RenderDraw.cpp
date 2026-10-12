@@ -115,9 +115,8 @@ bool RenderDraw_DrawQuad(const DrawQuadCmd &cmd, RenderState *state)
     RenderState_SetTexture(state, TextureType::TextureType_Texture2D, cmd.texture);
     RenderState_SetupCachedState(state, model);
     RENDER_STATE_DUMP_BEFORE(state);
-    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, g_drawVBO));
-    GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, 4 * sizeof(GenericVertex), data));
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
+    const int first = RenderDraw_StreamVertices(data, 4);
+    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, first, 4));
     RENDER_STATE_DUMP_AFTER(state);
     RenderDebug_CheckStateLeaks(state, "RenderDraw_DrawQuad");
     RenderState_ResetAllStates(state);
@@ -175,9 +174,8 @@ bool RenderDraw_DrawRotatedQuad(const DrawRotatedQuadCmd &cmd, RenderState *stat
     RenderState_SetTexture(state, TextureType::TextureType_Texture2D, cmd.texture);
     RenderState_SetupCachedState(state, model);
     RENDER_STATE_DUMP_BEFORE(state);
-    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, g_drawVBO));
-    GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, 4 * sizeof(GenericVertex), data));
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
+    const int first = RenderDraw_StreamVertices(data, 4);
+    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, first, 4));
     RENDER_STATE_DUMP_AFTER(state);
     RenderDebug_CheckStateLeaks(state, "RenderDraw_DrawRotatedQuad");
     RenderState_ResetAllStates(state);
@@ -280,9 +278,8 @@ bool RenderDraw_DrawCharacterSitting(const DrawCharacterSittingCmd &cmd, RenderS
         RenderState_SetTexture(state, TextureType::TextureType_Texture2D, cmd.texture);
         RenderState_SetupCachedState(state, model);
         RENDER_STATE_DUMP_BEFORE(state);
-        GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, g_drawVBO));
-        GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, vertexCount * sizeof(GenericVertex), vertices));
-        GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, 0, vertexCount));
+        const int first = RenderDraw_StreamVertices(vertices, vertexCount);
+        GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, first, vertexCount));
         RENDER_STATE_DUMP_AFTER(state);
         RenderDebug_CheckStateLeaks(state, "RenderDraw_DrawCharacterSitting");
         RenderState_ResetAllStates(state);
@@ -362,9 +359,8 @@ bool RenderDraw_DrawLandTile(const DrawLandTileCmd &cmd, RenderState *state)
     RenderState_SetTexture(state, TextureType::TextureType_Texture2D, cmd.texture);
     RenderState_SetupCachedState(state, model);
     RENDER_STATE_DUMP_BEFORE(state);
-    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, g_drawVBO));
-    GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, 4 * sizeof(GenericVertex), vertices));
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
+    const int first = RenderDraw_StreamVertices(vertices, 4);
+    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, first, 4));
     RENDER_STATE_DUMP_AFTER(state);
     RenderDebug_CheckStateLeaks(state, "RenderDraw_DrawLandTile");
     RenderState_ResetAllStates(state);
@@ -414,9 +410,8 @@ bool RenderDraw_DrawShadow(const DrawShadowCmd &cmd, RenderState *state)
         BlendFactor::BlendFactor_DstColor,
         BlendFactor::BlendFactor_Zero,
         BlendEquation::BlendEquation_Add);
-    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, g_drawVBO));
-    GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, 4 * sizeof(GenericVertex), data));
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
+    const int first = RenderDraw_StreamVertices(data, 4);
+    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, first, 4));
 
     if (cmd.keepBlend)
     {
@@ -471,9 +466,8 @@ bool RenderDraw_DrawCircle(const DrawCircleCmd &cmd, RenderState *state)
     RenderState_SetTexture(state, TextureType::TextureType_Texture2D, _defaultTex);
     RenderState_SetupCachedState(state, model);
     RENDER_STATE_DUMP_BEFORE(state);
-    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, g_drawVBO));
-    GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, (segments + 1) * sizeof(GenericVertex), vertices));
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_FAN, 0, segments + 1));
+    const int first = RenderDraw_StreamVertices(vertices, (segments + 1));
+    GL_CHECK(glDrawArrays(GL_TRIANGLE_FAN, first, segments + 1));
     RENDER_STATE_DUMP_AFTER(state);
     RenderDebug_CheckStateLeaks(state, "RenderDraw_DrawCircle");
     RenderState_ResetAllStates(state);
@@ -504,9 +498,8 @@ bool RenderDraw_DrawUntexturedQuad(const DrawUntexturedQuadCmd &cmd, RenderState
     RenderState_SetTexture(state, TextureType::TextureType_Texture2D, _whiteTex);
     RenderState_SetupCachedState(state, model);
     RENDER_STATE_DUMP_BEFORE(state);
-    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, g_drawVBO));
-    GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, 4 * sizeof(GenericVertex), data));
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, 0, 4));
+    const int first = RenderDraw_StreamVertices(data, 4);
+    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, first, 4));
     RENDER_STATE_DUMP_AFTER(state);
     RenderDebug_CheckStateLeaks(state, "RenderDraw_DrawUntexturedQuad");
     RenderState_ResetAllStates(state);
@@ -543,9 +536,8 @@ bool RenderDraw_DrawLine(const DrawLineCmd &cmd, RenderState *state)
     RenderState_SetTexture(state, TextureType::TextureType_Texture2D, _defaultTex);
     RenderState_SetupCachedState(state, model);
     RENDER_STATE_DUMP_BEFORE(state);
-    GL_CHECK(glBindBuffer(GL_ARRAY_BUFFER, g_drawVBO));
-    GL_CHECK(glBufferSubData(GL_ARRAY_BUFFER, 0, 2 * sizeof(GenericVertex), data));
-    GL_CHECK(glDrawArrays(GL_LINES, 0, 2));
+    const int first = RenderDraw_StreamVertices(data, 2);
+    GL_CHECK(glDrawArrays(GL_LINES, first, 2));
     RenderState_SetBlendEnabled(state, false);
     RENDER_STATE_DUMP_AFTER(state);
     RenderDebug_CheckStateLeaks(state, "RenderDraw_DrawLine");
@@ -717,7 +709,10 @@ bool RenderDraw_GetFrameBufferPixels(const GetFrameBufferPixelsCmd &cmd, RenderS
     int needed_height = cmd.y + cmd.height;
     int bottom = cmd.window_height - needed_height;
 
-    glReadPixels(cmd.x, bottom, cmd.width, cmd.height, GL_RGBA, format, cmd.data);
+    // the buffer holds cmd.width x cmd.height logical pixels; at pixel ratio > 1 this reads the
+    // matching top-left device pixels (exact for 1x1 picking reads)
+    const float r = Render_PixelRatio(state);
+    glReadPixels(int(cmd.x * r), int(bottom * r), cmd.width, cmd.height, GL_RGBA, format, cmd.data);
 
     return true;
 }
@@ -726,7 +721,10 @@ bool RenderDraw_PushDebugMarker(const PushDebugMarkerCmd &cmd, RenderState *stat
 {
     (void)state;
 #if defined(NEW_RENDERER_ENABLED) && defined(USE_GL3)
-    glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, OGL_USERPERFMARKERS_ID, -1, cmd.label);
+    if (glPushDebugGroup != nullptr) // KHR_debug (GL 4.3); absent on macOS
+    {
+        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, OGL_USERPERFMARKERS_ID, -1, cmd.label);
+    }
 #else
     (void)cmd;
 #endif
@@ -737,7 +735,10 @@ bool RenderDraw_PopDebugMarker(const PopDebugMarkerCmd &cmd, RenderState *state)
 {
     (void)state;
 #if defined(NEW_RENDERER_ENABLED) && defined(USE_GL3)
-    glPopDebugGroup();
+    if (glPopDebugGroup != nullptr)
+    {
+        glPopDebugGroup();
+    }
 #else
     (void)cmd;
 #endif

@@ -49,8 +49,15 @@ if (NOT CMAKE_BUILD_TYPE)
 endif()
 
 if (NOT RENDER_GLES2 AND NOT RENDER_GL1 AND NOT RENDER_GL3)
-  message(STATUS "No render selected, defaulting to OpenGL 1")
-  set(RENDER_GL1 On)
+  if (APPLE)
+    # macOS offers a native 4.1 core profile; the legacy GL1/GL2 path no longer draws the
+    # world since its shaders were replaced by the GL3 ones.
+    message(STATUS "No render selected, defaulting to OpenGL 3 on macOS")
+    set(RENDER_GL3 On)
+  else()
+    message(STATUS "No render selected, defaulting to OpenGL 1")
+    set(RENDER_GL1 On)
+  endif()
 endif()
 
 #

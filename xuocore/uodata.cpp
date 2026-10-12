@@ -1509,6 +1509,26 @@ CFileManager::MulReadAnimationFrames(const AnimationState &anim, LoadPixelData16
     auto ptr = (uint8_t *)direction.Address;
     if (!direction.IsVerdata)
     {
+        // Refuse reads outside the mapped anim*.mul file (bad or unconverted index data).
+        const bool validFile = direction.FileIndex < countof(m_AnimMul) &&
+                               m_AnimMul[direction.FileIndex].Start != nullptr;
+        if (!validFile || direction.Address + direction.Size > m_AnimMul[direction.FileIndex].Size)
+        {
+            static std::unordered_set<uint32_t> reported;
+            if (reported.insert(anim.Graphic << 8 | anim.Group).second)
+            {
+                Warning(
+                    Data,
+                    "bad MUL animation 0x%04X group %d: file %d (%s) address %zu size %u",
+                    anim.Graphic,
+                    anim.Group,
+                    direction.FileIndex,
+                    validFile ? "loaded" : "missing",
+                    direction.Address,
+                    direction.Size);
+            }
+            return false;
+        }
         ptr = MulReadAnimationData(direction);
     }
     SetData(ptr, direction.Size);
@@ -1623,7 +1643,10 @@ void CFileManager::LoadAnimationFrameInfo(
 
 bool CFileManager::LoadAnimation(const AnimationState &anim, LoadPixelData16Cb pLoadFunc)
 {
-    assert(anim.Group < MAX_ANIMATION_GROUPS_COUNT);
+    if (anim.Graphic >= MAX_ANIMATIONS_DATA_INDEX_COUNT || anim.Group >= MAX_ANIMATION_GROUPS_COUNT)
+    {
+        return false;
+    }
     auto &direction = g_Index.m_Anim[anim.Graphic].Groups[anim.Group].Direction[anim.Direction];
     bool res = false;
     if (direction.Size != 0)

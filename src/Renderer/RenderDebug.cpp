@@ -147,6 +147,12 @@ static void APIENTRY OGLDebugMsgCallback(
 void SetupOGLDebugMessage()
 {
 #ifdef OGL_DEBUGCONTEXT_ENABLED
+    // KHR_debug is GL 4.3; macOS stops at 4.1, where these entry points are null. (Without
+    // GLEW, GL_KHR_debug is a header constant, so callers can't rely on it.)
+    if (glDebugMessageCallback == nullptr || glDebugMessageControl == nullptr)
+    {
+        return;
+    }
     EnableOpenGLDebugMsgSeverity(GL_DEBUG_SEVERITY_HIGH, true, true);
     EnableOpenGLDebugMsgSeverity(GL_DEBUG_SEVERITY_MEDIUM, false, true);
     EnableOpenGLDebugMsgSeverity(GL_DEBUG_SEVERITY_LOW, false, true);
