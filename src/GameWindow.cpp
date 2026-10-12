@@ -398,7 +398,8 @@ void CGameWindow::OnKeyDown(const KeyEvent &ev)
     const auto key = EvKey(ev);
 #if __APPLE__
     // macOS window shortcuts; consumed here so they never reach macros or text entry.
-    const auto mod = SDL_GetModState();
+    // the event's own modifiers: SDL_GetModState() can be stale across a full screen Space switch
+    const auto mod = ev.keysym.mod;
     if ((mod & KMOD_GUI) != 0)
     {
         if (key == SDLK_EQUALS || key == SDLK_PLUS || key == SDLK_KP_PLUS ||

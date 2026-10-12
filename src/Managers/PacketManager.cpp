@@ -2730,6 +2730,16 @@ PACKET_HANDLER(ExtendedCommand)
 {
     uint16_t cmd = ReadUInt16BE();
 
+    // These dereference the world/player. Servers (e.g. UOAlive) can send them while the
+    // character list is still up, before login confirm has created either.
+    const bool needsWorld = cmd == 1 || cmd == 2 || cmd == 0x10 || cmd == 0x19 || cmd == 0x1B ||
+                            cmd == 0x1D;
+    if (needsWorld && (g_World == nullptr || g_Player == nullptr))
+    {
+        Warning(Network, "ignoring extended command 0x%04X received before the world exists", cmd);
+        return;
+    }
+
     switch (cmd)
     {
         case 0:
