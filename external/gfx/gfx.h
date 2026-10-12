@@ -34,7 +34,7 @@
     #define USE_GLEW
     #define SOKOL_GLES2
     #define GL_SHADER_VERSION "120"
-    #define GL_SHADER_ATTRIBUTE(x) "in "
+    #define GL_SHADER_ATTRIBUTE(x) "attribute " // GLSL 1.20 has no 'in' globals (Apple's compiler is strict)
     #define GL_SHADER_IN "varying "
     #define GL_SHADER_OUT "varying "
     #define GFX_GL_MAJOR 2
@@ -119,10 +119,12 @@
 
 #define GL_SHADER_HEADER \
     "#version " GL_SHADER_VERSION "\n" \
+    "#ifdef GL_ES\n" \
     "#ifdef GL_FRAGMENT_PRECISION_HIGH\n" \
     "precision highp float;\n" \
     "#else\n" \
     "precision mediump float;\n" \
+    "#endif\n" \
     "#endif\n"
 #endif
 

@@ -36,16 +36,25 @@ void win_gfx_context_attrbutes(int enableDebug)
 #if defined(USE_GL) || defined(USE_GLES)
 #if defined(USE_GLES)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+#elif defined(__APPLE__) && (defined(USE_GL1) || defined(USE_GL2))
+    // The GL1/GL2 renderers use the fixed-function pipeline, which macOS only exposes in its
+    // legacy 2.1 context; a core profile (4.1) rejects glEnable(GL_TEXTURE_2D), glShadeModel, etc.
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, 0);
 #else
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 #endif
-#if !defined(USE_GL2)
+#if defined(__APPLE__) && (defined(USE_GL1) || defined(USE_GL2))
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+#elif !defined(USE_GL2)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, GFX_GL_MAJOR);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, GFX_GL_MINOR);
 #endif // !defined(USE_GL2)
-#if defined(__APPLE__)
+#if defined(__APPLE__) && (defined(USE_GL1) || defined(USE_GL2))
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
+#elif defined(__APPLE__)
     SDL_GL_SetAttribute(
-        SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG); // Always required on Mac
+        SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG); // Required on Mac for core profiles
 #else
     if (enableDebug)
     {

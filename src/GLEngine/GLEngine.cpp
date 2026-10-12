@@ -227,7 +227,7 @@ bool CGLEngine::Install()
         g_GameWindow.ShowMessage("Your graphics card does not support Frame Buffers", "Error");
     }
     GL_CALL(glClearStencil(0));
-    GL_CALL(glClearDepthf(1.0));
+    GL_CALL(glClearDepth(1.0)); // glClearDepthf is GL 4.1+/ES only; null in a legacy 2.1 context
     GL_CALL(glEnable(GL_TEXTURE_2D));
     GL_CALL(glEnable(GL_BLEND));
     GL_CALL(glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA));

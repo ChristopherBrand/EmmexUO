@@ -80,12 +80,13 @@ static SoundInfo *getSound(void *data, size_t len)
     return sfx;
 }
 
-#pragma pack(push, 1)
 struct MidiInfoStruct
 {
     const char *musicName;
     bool loop;
 };
+
+#pragma pack(push, 1)
 struct WaveHeader
 {
     char chunkId[4];
