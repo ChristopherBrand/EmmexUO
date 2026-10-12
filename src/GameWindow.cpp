@@ -368,6 +368,29 @@ void CGameWindow::OnKeyDown(const KeyEvent &ev)
     }
 
     const auto key = EvKey(ev);
+#if __APPLE__
+    // macOS window shortcuts; consumed here so they never reach macros or text entry.
+    const auto mod = SDL_GetModState();
+    if ((mod & KMOD_GUI) != 0)
+    {
+        if (key == SDLK_EQUALS || key == SDLK_PLUS || key == SDLK_KP_PLUS ||
+            key == SDLK_MINUS || key == SDLK_KP_MINUS)
+        {
+            const int step = (key == SDLK_MINUS || key == SDLK_KP_MINUS) ? -1 : 1;
+            g_Config.UIScale = std::min(std::max(g_Config.UIScale + step, 1), 4);
+            SetUIScale(g_Config.UIScale);
+            return;
+        }
+        if (key == SDLK_f && (mod & KMOD_CTRL) != 0)
+        {
+            if (g_GameState >= GS_GAME) // the login screens are a fixed 640x480 layout
+            {
+                ToggleFullscreen();
+            }
+            return;
+        }
+    }
+#endif
     const bool acceptKey = true;
     if (acceptKey && g_CurrentScreen != nullptr && g_ScreenEffectManager.Mode == SEM_NONE)
     {

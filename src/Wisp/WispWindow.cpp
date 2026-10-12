@@ -49,6 +49,34 @@ void CWindow::SetSize(const CSize &size)
     m_Size = size;
 }
 
+void CWindow::SetUIScale(int scale)
+{
+    if (scale < 1 || scale == UIScale)
+    {
+        return;
+    }
+    const CSize logical = m_Size;
+    UIScale = scale;
+    if ((SDL_GetWindowFlags(m_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0)
+    {
+        // the OS window stays screen-sized; only the logical size changes
+        int w, h;
+        SDL_GetWindowSize(m_window, &w, &h);
+        m_Size = { w / UIScale, h / UIScale };
+        OnResize();
+        return;
+    }
+    SDL_SetWindowSize(m_window, logical.Width * UIScale, logical.Height * UIScale);
+    m_Size = logical;
+    OnResize();
+}
+
+void CWindow::ToggleFullscreen()
+{
+    const bool fullscreen = (SDL_GetWindowFlags(m_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
+    SDL_SetWindowFullscreen(m_window, fullscreen ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP);
+}
+
 void CWindow::SetPositionSize(int x, int y, int width, int height)
 {
 #if SDL_VERSION_ATLEAST(2, 0, 5)

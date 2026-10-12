@@ -32,6 +32,9 @@ public:
     bool OnWindowProc(SDL_Event &ev);
     CSize GetSize() { return m_Size; };
     void SetSize(const CSize &size);
+    // Change the integer UI scale, keeping the logical (game) size.
+    void SetUIScale(int scale);
+    void ToggleFullscreen();
     CSize GetMinSize() { return m_MinSize; };
     void SetMinSize(const CSize &newMinSize);
     CSize GetMaxSize() { return m_MaxSize; };
