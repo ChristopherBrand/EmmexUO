@@ -243,8 +243,6 @@ static struct
     dispatch_semaphore_t inflight = nullptr;
     id<MTLCommandBuffer> cmd = nil;
     id<CAMetalDrawable> drawable = nil;
-    id<MTLTexture> windowStencil = nil;
-    bool drawableUsed = false; // first pass on the drawable this frame clears it
 
     // vertices
     id<MTLBuffer> vertexBuffers[FRAMES_IN_FLIGHT] = {};
@@ -376,18 +374,27 @@ static id<MTLTexture> make_stencil(int w, int h)
     return [m.device newTextureWithDescriptor:d];
 }
 
+// The default target is always this persistent scene texture, copied to the drawable at
+// present. It keeps the last frame for readback (screenshots happen after present) and is
+// drawn at the next whole pixel ratio when smooth scaling, then scaled down linearly.
 static void scene_buffer_prepare()
 {
-    if (!smooth_active())
+    int w = 0, h = 0;
+    if (smooth_active())
     {
-        return;
+        int windowW = 0, windowH = 0;
+        SDL_GetWindowSize(m.window, &windowW, &windowH);
+        const float uiScale = Wisp::g_WispWindow != nullptr ? Wisp::g_WispWindow->UIScale : 1.f;
+        const float ratio = std::ceil(window_pixel_ratio());
+        w = int(int(windowW / uiScale) * ratio);
+        h = int(int(windowH / uiScale) * ratio);
     }
-    int windowW = 0, windowH = 0;
-    SDL_GetWindowSize(m.window, &windowW, &windowH);
-    const float uiScale = Wisp::g_WispWindow != nullptr ? Wisp::g_WispWindow->UIScale : 1.f;
-    const float ratio = std::ceil(window_pixel_ratio());
-    const int w = std::max(1, int(int(windowW / uiScale) * ratio));
-    const int h = std::max(1, int(int(windowH / uiScale) * ratio));
+    else
+    {
+        drawable_size(&w, &h);
+    }
+    w = std::max(w, 1);
+    h = std::max(h, 1);
     if (m.sceneColor != nil && w == m.sceneW && h == m.sceneH)
     {
         return;
@@ -440,15 +447,10 @@ static void ensure_drawable()
     {
         m.layer.contentsScale = nsw.backingScaleFactor;
     }
-    if (m.windowStencil == nil || int(m.windowStencil.width) != w || int(m.windowStencil.height) != h)
-    {
-        m.windowStencil = make_stencil(w, h);
-    }
     @autoreleasepool
     {
         m.drawable = [m.layer nextDrawable];
     }
-    m.drawableUsed = false;
 }
 
 static void end_encoder()
@@ -478,27 +480,11 @@ static void begin_pass(uint32_t target, bool clearColor, bool clearStencil)
         }
         offscreen = true;
     }
-    else if (smooth_active())
+    else
     {
         scene_buffer_prepare();
         color = m.sceneColor;
         stencil = m.sceneStencil;
-    }
-    else
-    {
-        ensure_drawable();
-        if (m.drawable == nil)
-        {
-            return;
-        }
-        color = m.drawable.texture;
-        stencil = m.windowStencil;
-        if (!m.drawableUsed)
-        {
-            clearColor = true;
-            clearStencil = true;
-            m.drawableUsed = true;
-        }
     }
     if (color == nil)
     {
@@ -877,31 +863,22 @@ void Render_SwapBuffers()
     {
         return;
     }
-    if (smooth_active() && m.sceneColor != nil)
     {
-        MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
-        pass.colorAttachments[0].texture = m.drawable.texture;
-        pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
-        pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-        id<MTLRenderCommandEncoder> enc = [m.cmd renderCommandEncoderWithDescriptor:pass];
-        [enc setRenderPipelineState:m.blitPipeline];
-        [enc setFragmentTexture:m.sceneColor atIndex:0];
-        [enc setFragmentSamplerState:m.linear atIndex:0];
-        [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
-        [enc endEncoding];
-        m.drawableUsed = true;
-    }
-    else if (!m.drawableUsed)
-    {
-        // nothing drawn this frame: present a cleared drawable rather than undefined contents
+        // scene -> drawable (linear when smooth scaling shrinks a larger scene)
         MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
         pass.colorAttachments[0].texture = m.drawable.texture;
         pass.colorAttachments[0].loadAction = MTLLoadActionClear;
         pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-        pass.colorAttachments[0].clearColor =
-            MTLClearColorMake(m.clearColor[0], m.clearColor[1], m.clearColor[2], m.clearColor[3]);
-        [[m.cmd renderCommandEncoderWithDescriptor:pass] endEncoding];
-        m.drawableUsed = true;
+        pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1);
+        id<MTLRenderCommandEncoder> enc = [m.cmd renderCommandEncoderWithDescriptor:pass];
+        if (m.sceneColor != nil)
+        {
+            [enc setRenderPipelineState:m.blitPipeline];
+            [enc setFragmentTexture:m.sceneColor atIndex:0];
+            [enc setFragmentSamplerState:(smooth_active() ? m.linear : m.nearest) atIndex:0];
+            [enc drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+        }
+        [enc endEncoding];
     }
 
     MTLRenderPassDescriptor *overlay = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -1308,7 +1285,7 @@ bool RenderBackend_ReadPixels(const GetFrameBufferPixelsCmd &cmd, RenderState *s
     }
     else
     {
-        src = smooth_active() ? m.sceneColor : m.drawable.texture;
+        src = m.sceneColor;
     }
     end_encoder();
     if (src == nil)
