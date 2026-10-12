@@ -36,6 +36,8 @@ bool HACKRender_GetFrameBuffer(RenderCmdList *cmdList, frame_buffer_t *currFb);
 bool Render_Init(SDL_Window *window);
 void Render_Shutdown();
 void Render_SwapBuffers();
+// Linear (smooth) instead of nearest sampling for every texture, for fractional UI scales.
+void Render_SetSmoothScaling(bool smooth);
 
 RenderState Render_DefaultState();
 void Render_ResetCmdList(RenderCmdList *cmdList, RenderState state);

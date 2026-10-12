@@ -26,14 +26,17 @@ public:
     // FIXME: Last API specific public surface on windowing stuff
     static WindowHandle Handle;
     SDL_Window *m_window = nullptr;
-    // Integer UI scale: m_Size and all game coordinates are in logical pixels; the OS window
-    // is UIScale times larger. Conversion happens only at the SDL boundary.
-    int UIScale = 1;
+    // UI scale (1..4 in 0.25 steps): m_Size and all game coordinates are in logical pixels;
+    // the OS window is UIScale times larger. Conversion happens only at the SDL boundary.
+    float UIScale = 1.f;
+    int ToOS(int logical) const { return int(logical * UIScale + 0.5f); }
+    int ToLogical(int os) const { return int(os / UIScale); }
     bool OnWindowProc(SDL_Event &ev);
     CSize GetSize() { return m_Size; };
     void SetSize(const CSize &size);
-    // Change the integer UI scale, keeping the logical (game) size.
-    void SetUIScale(int scale);
+    // Change the UI scale. keepWindowSize: the OS window stays put and the logical size
+    // changes (zoom, in game); otherwise the logical size is kept (fixed-layout screens).
+    void SetUIScale(float scale, bool keepWindowSize = false);
     void ToggleFullscreen();
     CSize GetMinSize() { return m_MinSize; };
     void SetMinSize(const CSize &newMinSize);

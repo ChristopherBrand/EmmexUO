@@ -23,10 +23,10 @@ CMouse::~CMouse()
 void CMouse::Update()
 {
     SDL_GetMouseState(&Position.X, &Position.Y);
-    if (g_WispWindow != nullptr && g_WispWindow->UIScale > 1)
+    if (g_WispWindow != nullptr && g_WispWindow->UIScale != 1.f)
     {
-        Position.X /= g_WispWindow->UIScale;
-        Position.Y /= g_WispWindow->UIScale;
+        Position.X = g_WispWindow->ToLogical(Position.X);
+        Position.Y = g_WispWindow->ToLogical(Position.Y);
     }
     Dragging = (LeftButtonPressed || RightButtonPressed || MidButtonPressed);
     RealPosition = Position;

@@ -25,8 +25,25 @@
 #include "../Managers/ColorManager.h"
 #include "../Managers/ConfigManager.h"
 #include "../Managers/MacroManager.h"
+#include "../Renderer/RenderAPI.h"
+#include <cmath>
 
 bool &Overlay_Visible(OverlayWindow w);
+
+// ImGui doesn't keep windows on screen; after a resize or scale change pull them back.
+static void keep_on_screen()
+{
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const ImVec2 pos = ImGui::GetWindowPos();
+    const ImVec2 size = ImGui::GetWindowSize();
+    ImVec2 p = pos;
+    p.x = std::max(0.f, std::min(p.x, display.x - std::min(size.x, display.x)));
+    p.y = std::max(0.f, std::min(p.y, display.y - std::min(size.y, display.y)));
+    if (p.x != pos.x || p.y != pos.y)
+    {
+        ImGui::SetWindowPos(p);
+    }
+}
 
 // ---------------------------------------------------------------------------------------
 // Journal
@@ -85,6 +102,7 @@ void Overlay_DrawJournal(bool *open, float scale)
         ImGui::End();
         return;
     }
+    keep_on_screen();
 
     ImGui::SetNextItemWidth(-60 * scale);
     ImGui::InputTextWithHint("##filter", "Search", filter, sizeof(filter));
@@ -182,15 +200,28 @@ void Overlay_DrawSettings(bool *open, float scale)
         ImGui::End();
         return;
     }
+    keep_on_screen();
     auto &cfg = g_ConfigManager;
 
     if (ImGui::CollapsingHeader("Display", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        int uiScale = g_GameWindow.UIScale;
-        if (ImGui::SliderInt("UI scale", &uiScale, 1, 4, "%dx"))
+        float uiScale = g_GameWindow.UIScale;
+        if (ImGui::SliderFloat("UI scale", &uiScale, 1.f, 4.f, "%.2fx"))
         {
-            g_Config.UIScale = uiScale;
-            g_GameWindow.SetUIScale(uiScale);
+            uiScale = std::round(uiScale * 4.f) / 4.f; // 0.25 steps
+            if (uiScale != g_GameWindow.UIScale)
+            {
+                g_Config.UIScale = uiScale;
+                g_GameWindow.SetUIScale(uiScale, g_GameState >= GS_GAME);
+            }
+        }
+        if (ImGui::Checkbox("Smooth scaling", &g_Config.SmoothScaling))
+        {
+            Render_SetSmoothScaling(g_Config.SmoothScaling);
+        }
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Softer, even scaling (best for 1.25x, 1.5x...). Off keeps crisp pixels.");
         }
         bool fullscreen = g_GameWindow.IsFullscreen();
         if (ImGui::Checkbox("Full screen", &fullscreen))
@@ -466,6 +497,7 @@ void Overlay_DrawMacros(bool *open, float scale)
         ImGui::End();
         return;
     }
+    keep_on_screen();
 
     bool selectedExists = false;
     ImGui::BeginChild("##list", ImVec2(210 * scale, 0), true);
@@ -600,6 +632,7 @@ void Overlay_DrawTarget(bool *open, float scale)
         ImGui::End();
         return;
     }
+    keep_on_screen();
     character_block(g_Player, "You", scale);
     ImGui::Separator();
     CGameCharacter *target = nullptr;

@@ -25,7 +25,7 @@ static SDL_Window *s_window = nullptr;
 static bool s_initialized = false;
 static bool s_visible[4] = {};
 static std::string s_iniPath;
-static int s_fontScale = 0; // UI scale the fonts and style were built for
+static float s_fontScale = 0.f; // UI scale the fonts and style were built for
 static float s_fontRetina = 0.f;
 
 bool &Overlay_Visible(OverlayWindow w)
@@ -70,7 +70,7 @@ static void apply_style(float scale)
 // Fonts are rasterized at the real pixel size (UI scale x Retina) so text stays crisp.
 static void rebuild_fonts_if_needed()
 {
-    const int scale = std::max(1, Wisp::g_WispWindow != nullptr ? Wisp::g_WispWindow->UIScale : 1);
+    const float scale = std::max(1.f, Wisp::g_WispWindow != nullptr ? Wisp::g_WispWindow->UIScale : 1.f);
     const float retina = retina_factor();
     if (scale == s_fontScale && retina == s_fontRetina)
     {

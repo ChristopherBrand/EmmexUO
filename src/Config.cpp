@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2020 Danny Angelo Carminati Grein
 
+#include <cmath>
 #include "Config.h"
 
 #include "Globals.h"
@@ -42,6 +43,7 @@ enum
     MSCC_CLIENT_TYPE,
     MSCC_LOCALE_OVERRIDE,
     MSCC_UI_SCALE,
+    MSCC_SMOOTH_SCALING,
     MSCC_COUNT,
 };
 
@@ -78,6 +80,7 @@ static const ConfigEntry s_Keys[] = {
     { MSCC_CLIENT_TYPE, "clienttype" },
     { MSCC_LOCALE_OVERRIDE, "language" },
     { MSCC_UI_SCALE, "uiscale" },
+    { MSCC_SMOOTH_SCALING, "smoothscaling" },
     { MSCC_COUNT, nullptr },
 };
 static_assert(countof(s_Keys) == MSCC_COUNT, "missing config entry");
@@ -493,9 +496,14 @@ bool LoadGlobalConfig()
                     g_Config.LocaleOverride = str_upper(strings[1]);
                 }
                 break;
+                case MSCC_SMOOTH_SCALING:
+                {
+                    g_Config.SmoothScaling = str_to_bool(strings[1]);
+                }
+                break;
                 case MSCC_UI_SCALE:
                 {
-                    g_Config.UIScale = std::min(std::max(str_to_int(strings[1]), 1), 4);
+                    g_Config.UIScale = std::round(std::min(std::max(float(atof(strings[1].c_str())), 1.f), 4.f) * 4.f) / 4.f;
                 }
                 break;
                 default:
@@ -611,9 +619,13 @@ void SaveGlobalConfig()
         fprintf(cfg, "ProtocolClientVersion=%s\n", g_Config.ProtocolClientVersionString.c_str());
     }
 
-    if (g_Config.UIScale != 0) // only once chosen explicitly (Cmd+= / Cmd+-)
+    if (g_Config.UIScale != 0.f) // only once chosen explicitly (Cmd+= / Cmd+-)
     {
-        fprintf(cfg, "UIScale=%d\n", g_Config.UIScale);
+        fprintf(cfg, "UIScale=%g\n", g_Config.UIScale);
+    }
+    if (g_Config.SmoothScaling)
+    {
+        fprintf(cfg, "SmoothScaling=yes\n");
     }
     fflush(cfg);
     fs_close(cfg);

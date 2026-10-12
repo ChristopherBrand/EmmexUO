@@ -405,9 +405,9 @@ void CGameWindow::OnKeyDown(const KeyEvent &ev)
         if (key == SDLK_EQUALS || key == SDLK_PLUS || key == SDLK_KP_PLUS ||
             key == SDLK_MINUS || key == SDLK_KP_MINUS)
         {
-            const int step = (key == SDLK_MINUS || key == SDLK_KP_MINUS) ? -1 : 1;
-            g_Config.UIScale = std::min(std::max(UIScale + step, 1), 4);
-            SetUIScale(g_Config.UIScale);
+            const float step = (key == SDLK_MINUS || key == SDLK_KP_MINUS) ? -0.25f : 0.25f;
+            g_Config.UIScale = std::min(std::max(UIScale + step, 1.f), 4.f);
+            SetUIScale(g_Config.UIScale, g_GameState >= GS_GAME);
             return;
         }
         if (key == SDLK_f && (mod & KMOD_CTRL) != 0)

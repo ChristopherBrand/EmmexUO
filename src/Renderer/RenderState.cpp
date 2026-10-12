@@ -663,7 +663,7 @@ bool RenderState_SetFrameBuffer(RenderState *state, frame_buffer_t fb, bool forc
         }
         else
         {
-            GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, 0));
+            GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, Render_DefaultFramebuffer()));
         }
         state->framebuffer = fb;
         return true;

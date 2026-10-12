@@ -6,6 +6,7 @@
 #define RENDERER_INTERNAL
 #include "../Renderer/RenderInternal.h"
 #include "../Overlay/Overlay.h"
+#include "../Config.h"
 #include "../Wisp/WispWindow.h"
 #include "Debug/RenderDebug.h"
 #include "../Utility/PerfMarker.h"
@@ -300,6 +301,7 @@ bool Render_Init(SDL_Window *window)
     g_render.context = context;
     g_render.window = window;
     Overlay_Init(window, context);
+    Render_SetSmoothScaling(g_Config.SmoothScaling);
     return true;
 }
 
@@ -348,10 +350,47 @@ bool HACKRender_GetFrameBuffer(RenderCmdList *cmdList, frame_buffer_t *currFb)
     return true;
 }
 
+// smooth scaling state (see Render_PixelRatio below)
+static bool s_smoothScaling = false;
+static GLuint s_sceneFbo = 0;
+static GLuint s_sceneColor = 0, s_sceneDepth = 0;
+static int s_sceneW = 0, s_sceneH = 0;
+static bool smooth_active();
+static void scene_buffer_prepare();
+
+void Render_SetSmoothScaling(bool smooth)
+{
+    s_smoothScaling = smooth;
+    if (!smooth_active())
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+    scene_buffer_prepare();
+}
+
 void Render_SwapBuffers()
 {
+    if (smooth_active() && s_sceneFbo != 0)
+    {
+        int drawableW = 0, drawableH = 0;
+        SDL_GL_GetDrawableSize(g_render.window, &drawableW, &drawableH);
+        const GLboolean scissor = glIsEnabled(GL_SCISSOR_TEST);
+        glDisable(GL_SCISSOR_TEST); // blits are clipped by the scissor box
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, s_sceneFbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glBlitFramebuffer(
+            0, 0, s_sceneW, s_sceneH, 0, 0, drawableW, drawableH, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        if (scissor)
+        {
+            glEnable(GL_SCISSOR_TEST);
+        }
+    }
     Overlay_Render();
     SDL_GL_SwapWindow(g_render.window);
+    // the renderer treats "no framebuffer" as already bound, so restore the scene buffer
+    // (resized if the window changed) for the next frame
+    scene_buffer_prepare();
 }
 
 bool Render_InitVertexBuffers()
@@ -770,18 +809,90 @@ void Render_ResetCmdList(RenderCmdList *cmdList, RenderState state)
     cmdList->state = state;
 }
 
+// Window pixels per logical game pixel.
+static float window_pixel_ratio()
+{
+    int windowW = 0, windowH = 0, drawableW = 0, drawableH = 0;
+    SDL_GetWindowSize(g_render.window, &windowW, &windowH);
+    SDL_GL_GetDrawableSize(g_render.window, &drawableW, &drawableH);
+    const float retina = (windowW > 0 && drawableW > 0) ? float(drawableW) / float(windowW) : 1.0f;
+    const float uiScale = Wisp::g_WispWindow != nullptr ? Wisp::g_WispWindow->UIScale : 1.f;
+    return retina * uiScale;
+}
+
+// Smooth scaling: at a fractional ratio the frame is drawn crisply at the next whole ratio
+// into this buffer, then scaled to the window with linear filtering at present time.
+// (Filtering each sprite instead leaves seams between tiles.)
+static bool smooth_active()
+{
+    if (!s_smoothScaling)
+    {
+        return false;
+    }
+    const float r = window_pixel_ratio();
+    return r != std::floor(r);
+}
+
+uint32_t Render_DefaultFramebuffer()
+{
+    return smooth_active() ? s_sceneFbo : 0;
+}
+
 float Render_PixelRatio(const RenderState *state)
 {
     if (state != nullptr && state->framebuffer.handle != RENDER_FRAMEBUFFER_INVALID)
     {
         return 1.0f;
     }
-    int windowW = 0, windowH = 0, drawableW = 0, drawableH = 0;
+    const float r = window_pixel_ratio();
+    return smooth_active() ? std::ceil(r) : r;
+}
+
+// (Re)creates the scene buffer for the current window and binds it as the default target.
+static void scene_buffer_prepare()
+{
+    if (!smooth_active())
+    {
+        return;
+    }
+    int windowW = 0, windowH = 0;
     SDL_GetWindowSize(g_render.window, &windowW, &windowH);
-    SDL_GL_GetDrawableSize(g_render.window, &drawableW, &drawableH);
-    const float retina = (windowW > 0 && drawableW > 0) ? float(drawableW) / float(windowW) : 1.0f;
-    const int uiScale = Wisp::g_WispWindow != nullptr ? Wisp::g_WispWindow->UIScale : 1;
-    return retina * float(uiScale);
+    const float uiScale = Wisp::g_WispWindow != nullptr ? Wisp::g_WispWindow->UIScale : 1.f;
+    const float ratio = std::ceil(window_pixel_ratio());
+    const int w = int(int(windowW / uiScale) * ratio);
+    const int h = int(int(windowH / uiScale) * ratio);
+    if (s_sceneFbo == 0 || w != s_sceneW || h != s_sceneH)
+    {
+        if (s_sceneFbo == 0)
+        {
+            glGenFramebuffers(1, &s_sceneFbo);
+            glGenTextures(1, &s_sceneColor);
+            glGenRenderbuffers(1, &s_sceneDepth);
+        }
+        GLint prevTex = 0;
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevTex);
+        glBindTexture(GL_TEXTURE_2D, s_sceneColor);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glBindTexture(GL_TEXTURE_2D, GLuint(prevTex));
+        glBindRenderbuffer(GL_RENDERBUFFER, s_sceneDepth);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, w, h);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_sceneFbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, s_sceneColor, 0);
+        glFramebufferRenderbuffer(
+            GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, s_sceneDepth);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        {
+            Warning(Renderer, "smooth scaling buffer incomplete; using direct rendering");
+            s_smoothScaling = false;
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            return;
+        }
+        s_sceneW = w;
+        s_sceneH = h;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, s_sceneFbo);
 }
 
 // Streaming vertex upload. Every draw used to rewrite offset 0 of g_drawVBO with

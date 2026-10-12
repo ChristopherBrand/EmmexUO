@@ -49,35 +49,35 @@ void CWindow::MaximizeWindow()
     {
         int top = 0;
         SDL_GetWindowBordersSize(m_window, &top, nullptr, nullptr, nullptr);
-        m_Size.Width = r.w / UIScale;
-        m_Size.Height = (r.h - top) / UIScale;
+        m_Size.Width = ToLogical(r.w);
+        m_Size.Height = ToLogical(r.h - top);
     }
 }
 
 void CWindow::SetSize(const CSize &size)
 {
-    SDL_SetWindowSize(m_window, size.Width * UIScale, size.Height * UIScale);
+    SDL_SetWindowSize(m_window, ToOS(size.Width), ToOS(size.Height));
     m_Size = size;
 }
 
-void CWindow::SetUIScale(int scale)
+void CWindow::SetUIScale(float scale, bool keepWindowSize)
 {
-    if (scale < 1 || scale == UIScale)
+    if (scale < 1.f || scale == UIScale)
     {
         return;
     }
     const CSize logical = m_Size;
     UIScale = scale;
-    if ((SDL_GetWindowFlags(m_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0)
+    if (keepWindowSize || (SDL_GetWindowFlags(m_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0)
     {
-        // the OS window stays screen-sized; only the logical size changes
+        // the OS window stays as it is; only the logical size changes
         int w, h;
         SDL_GetWindowSize(m_window, &w, &h);
-        m_Size = { w / UIScale, h / UIScale };
+        m_Size = { ToLogical(w), ToLogical(h) };
         OnResize();
         return;
     }
-    SDL_SetWindowSize(m_window, logical.Width * UIScale, logical.Height * UIScale);
+    SDL_SetWindowSize(m_window, ToOS(logical.Width), ToOS(logical.Height));
     m_Size = logical;
     OnResize();
 }
@@ -98,7 +98,7 @@ void CWindow::SetPositionSize(int x, int y, int width, int height)
 #endif
     SDL_RestoreWindow(m_window);
     SDL_SetWindowPosition(m_window, x, std::max(y, borderH));
-    SDL_SetWindowSize(m_window, width * UIScale, height * UIScale);
+    SDL_SetWindowSize(m_window, ToOS(width), ToOS(height));
     m_Size = CSize(width, height); // don't wait for the resize event (see MaximizeWindow)
 }
 
@@ -113,8 +113,8 @@ void CWindow::GetPositionSize(int *x, int *y, int *width, int *height)
     SDL_GetWindowPosition(m_window, x, y);
     *y = std::max(*y, borderH);
     SDL_GetWindowSize(m_window, width, height);
-    *width /= UIScale;
-    *height /= UIScale;
+    *width = ToLogical(*width);
+    *height = ToLogical(*height);
 }
 
 void CWindow::SetMinSize(const CSize &newMinSize)
@@ -140,7 +140,7 @@ void CWindow::SetMinSize(const CSize &newMinSize)
 #else
         int borderH = 0;
 #endif
-        SDL_SetWindowSize(m_window, width * UIScale, height * UIScale - borderH);
+        SDL_SetWindowSize(m_window, ToOS(width), ToOS(height) - borderH);
     }
     m_MinSize = newMinSize;
 }
@@ -168,7 +168,7 @@ void CWindow::SetMaxSize(const CSize &newMaxSize)
         int borderH = 0;
 #endif
         SDL_SetWindowMaximumSize(
-            m_window, newMaxSize.Width * UIScale, newMaxSize.Height * UIScale - borderH);
+            m_window, ToOS(newMaxSize.Width), ToOS(newMaxSize.Height) - borderH);
     }
 
     m_MaxSize = newMaxSize;
@@ -192,20 +192,20 @@ bool CWindow::Create(const char *title, bool showCursor, int width, int height)
     {
         return false;
     }
-    if (UIScale <= 0)
+    if (UIScale <= 0.f)
     {
         // Not configured: one step per 720 points of screen height, so the 640x480-era
         // UI is comfortable on large displays (1440p -> 2x, 4K at 1x -> 3x, Retina laptops -> 1x).
         SDL_Rect r{};
         SDL_GetDisplayBounds(0, &r); // full height: usable bounds lose the menu bar
-        UIScale = std::min(std::max(r.h / 720, 1), 4);
-        Info(Client, "UI scale %d picked for a %dx%d display", UIScale, r.w, r.h);
+        UIScale = float(std::min(std::max(r.h / 720, 1), 4));
+        Info(Client, "UI scale %g picked for a %dx%d display", UIScale, r.w, r.h);
     }
 
     m_Size.Width = width;
     m_Size.Height = height;
     m_window =
-        SDL_CreateWindow(title, 0, 0, width * UIScale, height * UIScale, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        SDL_CreateWindow(title, 0, 0, ToOS(width), ToOS(height), SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (m_window == nullptr)
     {
         SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "Coult not create window: %s\n", SDL_GetError());
@@ -352,7 +352,7 @@ bool CWindow::OnWindowProc(SDL_Event &ev)
                 case SDL_WINDOWEVENT_SIZE_CHANGED:
                 case SDL_WINDOWEVENT_RESIZED:
                 {
-                    m_Size = { ev.window.data1 / UIScale, ev.window.data2 / UIScale };
+                    m_Size = { ToLogical(ev.window.data1), ToLogical(ev.window.data2) };
                     OnResize();
                 }
                 break;
@@ -719,8 +719,8 @@ void GetDisplaySize(int *x, int *y)
     }
 #endif
     // callers size game-side (logical) windows and gumps
-    const int scale = Wisp::g_WispWindow != nullptr ? Wisp::g_WispWindow->UIScale : 1;
-    if (scale > 1)
+    const float scale = Wisp::g_WispWindow != nullptr ? Wisp::g_WispWindow->UIScale : 1.f;
+    if (scale > 1.f)
     {
         if (x != nullptr)
         {

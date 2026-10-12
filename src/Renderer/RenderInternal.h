@@ -30,6 +30,9 @@ struct RenderState;
 // readback rectangles are in pixels and get multiplied by it; projections stay logical.
 // Always 1 while rendering into a framebuffer object, whose textures are logical-sized.
 float Render_PixelRatio(const RenderState *state);
+// The framebuffer used when no offscreen target is set: 0 (the window), or the smooth
+// scaling scene buffer.
+uint32_t Render_DefaultFramebuffer();
 // Appends vertices to the streaming VBO (g_drawVBO) and returns the index of the first one,
 // for glDrawArrays(mode, first, count). Never overwrites data the GPU may still be reading.
 int RenderDraw_StreamVertices(const GenericVertex *vertices, int count);

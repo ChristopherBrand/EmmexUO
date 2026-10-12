@@ -1380,6 +1380,10 @@ void Render_Shutdown()
     }
 }
 
+void Render_SetSmoothScaling(bool)
+{
+}
+
 void Render_SwapBuffers()
 {
     ScopedPerfMarker(__FUNCTION__);
