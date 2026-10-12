@@ -49,6 +49,31 @@ CCliloc::CCliloc(const astr_t &lang)
             m_Data.SetData(m_File.Start, m_File.Size);
         }
     }
+    if (Loaded)
+    {
+        BuildIndex();
+    }
+}
+
+void CCliloc::BuildIndex()
+{
+    // A linear scan per lookup walks ~5MB for every miss; index the ~124k entries once.
+    m_Index.clear();
+    m_Data.ResetPtr();
+    m_Data.Move(6);
+    while (m_Data.Ptr + 7 <= m_Data.End)
+    {
+        const auto id = m_Data.ReadUInt32LE();
+        m_Data.Move(1);
+        const uint16_t len = m_Data.ReadUInt16LE();
+        if (m_Data.Ptr + len > m_Data.End)
+        {
+            break; // truncated or corrupt entry
+        }
+        m_Index[id] = { uint32_t(m_Data.Ptr - m_Data.Start), len };
+        m_Data.Move(len);
+    }
+    Info(Data, "Cliloc.%s: %zu entries", Language.c_str(), m_Index.size());
 }
 
 CCliloc::~CCliloc()
@@ -56,36 +81,25 @@ CCliloc::~CCliloc()
     m_File.Unload();
 }
 
-astr_t CCliloc::Load(uint32_t id)
+bool CCliloc::Load(uint32_t id, astr_t &result)
 {
-    astr_t result;
-    if (Loaded)
+    result.clear();
+    if (!Loaded)
+    {
+        return false;
+    }
+    const auto it = m_Index.find(id);
+    if (it == m_Index.end())
+    {
+        return false;
+    }
+    if (it->second.second > 0)
     {
         m_Data.ResetPtr();
-        m_Data.Move(6);
-        while (m_Data.Ptr + 7 <= m_Data.End)
-        {
-            auto currentID = m_Data.ReadUInt32LE();
-            m_Data.Move(1);
-            const uint16_t len = m_Data.ReadUInt16LE();
-            if (m_Data.Ptr + len > m_Data.End)
-            {
-                break; // truncated or corrupt entry
-            }
-            if (currentID == id)
-            {
-                if (len > 0)
-                {
-                    result = m_Data.ReadString(len);
-                    s_Cache[currentID] = result;
-                }
-                return result;
-            }
-
-            m_Data.Move(len);
-        }
+        m_Data.Move(it->second.first);
+        result = m_Data.ReadString(it->second.second);
     }
-    return result;
+    return true;
 }
 
 astr_t CCliloc::GetX(int id, bool toCamelCase, const char *default_value)
@@ -96,13 +110,19 @@ astr_t CCliloc::GetX(int id, bool toCamelCase, const char *default_value)
         return CONVERT_CASE(toCamelCase, (*it).second);
     }
 
-    astr_t result = Load(id);
-    if (Language != "enu")
+    astr_t result;
+    bool found = Load(id, result);
+    if (found && !result.empty())
     {
-        result = g_ClilocManager.Cliloc("enu")->GetX(id, toCamelCase, default_value);
+        s_Cache[id] = result;
+    }
+    if (Language != "enu" && result.empty())
+    {
+        return g_ClilocManager.Cliloc("enu")->GetX(id, toCamelCase, default_value);
     }
 
-    if (result.length() == 0)
+    // Some ids exist with empty text (e.g. 1121464); those are blank, not unknown.
+    if (!found)
     {
         if (default_value == nullptr)
         {

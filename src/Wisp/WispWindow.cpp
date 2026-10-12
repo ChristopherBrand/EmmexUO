@@ -692,4 +692,17 @@ void GetDisplaySize(int *x, int *y)
         *y = dm.h;
     }
 #endif
+    // callers size game-side (logical) windows and gumps
+    const int scale = Wisp::g_WispWindow != nullptr ? Wisp::g_WispWindow->UIScale : 1;
+    if (scale > 1)
+    {
+        if (x != nullptr)
+        {
+            *x /= scale;
+        }
+        if (y != nullptr)
+        {
+            *y /= scale;
+        }
+    }
 }

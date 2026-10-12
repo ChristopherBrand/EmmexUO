@@ -1071,6 +1071,8 @@ void CGameScreen::CalculateGameWindowBounds()
 
     int oldDrawOffsetX = g_RenderBounds.WindowDrawOffsetX;
 
+    g_GameWindow.FitGameView();
+
     g_RenderBounds.GameWindowPosX = g_ConfigManager.GameWindowX;
     g_RenderBounds.GameWindowPosY = g_ConfigManager.GameWindowY;
 

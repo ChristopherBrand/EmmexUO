@@ -167,6 +167,7 @@ enum
     CMKC_DRAW_STATUS_FOR_HUMANOIDS,
     CMKC_LARGEGUMPS,
 
+    CMKC_FIT_GAME_WINDOW,
     CMKC_COUNT
 };
 
@@ -309,6 +310,7 @@ static const ConfigEntry s_Keys[] = {
     { CMKC_CANCEL_NEW_TARGET_SYSTEM_ON_SHIFT_ESC, "cancelnewtargetsystemonshiftesc" },
     { CMKC_DRAW_STATUS_FOR_HUMANOIDS, "drawstatusforhumanoids" },
     { CMKC_LARGEGUMPS, "largegumps" },
+    { CMKC_FIT_GAME_WINDOW, "fitgamewindow" },
     { CMKC_COUNT, nullptr },
 };
 
@@ -343,6 +345,7 @@ void CConfigManager::Init()
     DefaultPage7();
     DefaultPage8();
     DefaultPage9();
+    SetClientFPS(m_ClientFPS); // apply the default frame delay, not just the value
 
     g_CircleOfTransparency.Create(CircleTransRadius);
 
@@ -351,6 +354,7 @@ void CConfigManager::Init()
     FilterPassword = "";
 
     ToggleBufficonWindow = true;
+    FitGameWindow = true;
 
     GameWindowX = 0;
     GameWindowY = 0;
@@ -1425,6 +1429,9 @@ bool CConfigManager::Load(const fs_path &path)
                 case CMKC_TOGGLE_BUFFICON_WINDOW:
                     ToggleBufficonWindow = str_to_bool(strings[1]);
                     break;
+                case CMKC_FIT_GAME_WINDOW:
+                    FitGameWindow = str_to_bool(strings[1]);
+                    break;
                 case CMKC_DEVELOPER_MODE:
                     g_DeveloperMode = (DEVELOPER_MODE)str_to_int(strings[1]);
                     break;
@@ -1743,6 +1750,7 @@ void CConfigManager::Save(const fs_path &path)
         writer.WriteInt("RealHeight", h);
 
         writer.WriteBool("ToggleBufficonWindow", ToggleBufficonWindow);
+        writer.WriteBool("FitGameWindow", FitGameWindow);
         writer.WriteInt("DeveloperMode", g_DeveloperMode);
 
         writer.WriteString("LastServer", g_ServerList.LastServerName);

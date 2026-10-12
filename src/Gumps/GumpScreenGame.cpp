@@ -254,6 +254,7 @@ void CGumpScreenGame::OnLeftMouseButtonUp()
 
     if (g_PressedObject.LeftObject == m_Items) //resizer
     {
+        g_ConfigManager.FitGameWindow = false; // an explicit size wins over fitting the window
         g_ConfigManager.GameWindowWidth = g_ConfigManager.GameWindowWidth + offset.X;
         g_ConfigManager.GameWindowHeight = g_ConfigManager.GameWindowHeight + offset.Y;
 

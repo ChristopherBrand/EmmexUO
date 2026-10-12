@@ -22,6 +22,7 @@ public:
     int GetRenderDelay();
     void SetWindowResizable(bool windowResizable) const;
     void RestoreWindow() const;
+    void FitGameView(); // size the game view to the window when FitGameWindow is on
 
     static const uint32_t MessageID = USER_MESSAGE_ID + 402;
 

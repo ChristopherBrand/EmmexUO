@@ -107,6 +107,7 @@ public:
     bool HoldShiftForEnablePathfind = false;
     int GameWindowWidth = 0;
     int GameWindowHeight = 0;
+    bool FitGameWindow = true; // keep the game view sized to the OS window (off once resized by hand)
     uint16_t SpeechDelay = 0;
     bool ScaleSpeechDelay = false;
     uint16_t SpeechColor = 0;

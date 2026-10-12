@@ -9,7 +9,7 @@ const int MIN_FPS_LIMIT = 12;
 
 const int MAX_FPS_LIMIT = 300;
 
-const int DEFAULT_FPS = MAX_FPS_LIMIT;
+const int DEFAULT_FPS = 60; // MAX_FPS_LIMIT busy-loops the main thread
 
 const int CPU_USAGE_DELAY = 2;
 

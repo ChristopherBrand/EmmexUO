@@ -276,6 +276,9 @@ bool Render_Init(SDL_Window *window)
     GL_CHECK(glGenTextures(1, &_whiteTex));
     GL_CHECK(glBindTexture(GL_TEXTURE_2D, _whiteTex));
     GL_CHECK(glTexImage2D(GL_TEXTURE_2D, 0,GL_RGBA, 8, 8, 0, GL_RGBA, GL_UNSIGNED_BYTE, _whiteTexture));
+    // without these the default mipmapped MIN_FILTER leaves the texture incomplete, and macOS samples it as black
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST));
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST));
 
     // Set texture unit to 0 once during initialization (never needs to change)
     GL_CHECK(glUniform1i(_uTex, 0)); // texture unit 0

@@ -32,6 +32,9 @@
 #if USE_PING
 #include "Utility/PingThread.h"
 #endif // USE_PING
+#include "Weather.h"
+#include "Config.h"
+#include <algorithm>
 
 CGameWindow g_GameWindow;
 
@@ -110,6 +113,31 @@ void CGameWindow::EmulateOnLeftMouseButtonDown()
             Wisp::g_WispMouse->LeftDropPosition = Wisp::g_WispMouse->Position;
             g_CurrentScreen->OnLeftMouseButtonDown();
         }
+    }
+}
+
+void CGameWindow::FitGameView()
+{
+    if (g_GameState < GS_GAME || !g_ConfigManager.FitGameWindow)
+    {
+        return;
+    }
+
+    // the view frame is 4px wide on each side
+    const CSize size = GetSize();
+    const int width = std::max(640, size.Width - g_ConfigManager.GameWindowX - 4);
+    const int height = std::max(480, size.Height - g_ConfigManager.GameWindowY - 4);
+    if (width == g_ConfigManager.GameWindowWidth && height == g_ConfigManager.GameWindowHeight)
+    {
+        return;
+    }
+
+    g_ConfigManager.GameWindowWidth = width;
+    g_ConfigManager.GameWindowHeight = height;
+    g_Weather.Generate();
+    if (g_Config.ClientVersion >= CV_200)
+    {
+        CPacketGameWindowSize().Send();
     }
 }
 
