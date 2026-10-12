@@ -26,6 +26,9 @@ public:
     // FIXME: Last API specific public surface on windowing stuff
     static WindowHandle Handle;
     SDL_Window *m_window = nullptr;
+    // Integer UI scale: m_Size and all game coordinates are in logical pixels; the OS window
+    // is UIScale times larger. Conversion happens only at the SDL boundary.
+    int UIScale = 1;
     bool OnWindowProc(SDL_Event &ev);
     CSize GetSize() { return m_Size; };
     void SetSize(const CSize &size);

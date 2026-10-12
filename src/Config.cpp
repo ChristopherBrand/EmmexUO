@@ -41,6 +41,7 @@ enum
     MSCC_USE_VERDATA,
     MSCC_CLIENT_TYPE,
     MSCC_LOCALE_OVERRIDE,
+    MSCC_UI_SCALE,
     MSCC_COUNT,
 };
 
@@ -76,6 +77,7 @@ static const ConfigEntry s_Keys[] = {
     { MSCC_USE_VERDATA, "useverdata" },
     { MSCC_CLIENT_TYPE, "clienttype" },
     { MSCC_LOCALE_OVERRIDE, "language" },
+    { MSCC_UI_SCALE, "uiscale" },
     { MSCC_COUNT, nullptr },
 };
 static_assert(countof(s_Keys) == MSCC_COUNT, "missing config entry");
@@ -491,6 +493,11 @@ bool LoadGlobalConfig()
                     g_Config.LocaleOverride = str_upper(strings[1]);
                 }
                 break;
+                case MSCC_UI_SCALE:
+                {
+                    g_Config.UIScale = std::min(std::max(str_to_int(strings[1]), 1), 4);
+                }
+                break;
                 default:
                     break;
             }
@@ -602,6 +609,11 @@ void SaveGlobalConfig()
     if (s_Mark.ProtocolVersion)
     {
         fprintf(cfg, "ProtocolClientVersion=%s\n", g_Config.ProtocolClientVersionString.c_str());
+    }
+
+    if (g_Config.UIScale != 1)
+    {
+        fprintf(cfg, "UIScale=%d\n", g_Config.UIScale);
     }
     fflush(cfg);
     fs_close(cfg);

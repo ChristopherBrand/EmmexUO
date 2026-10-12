@@ -38,8 +38,8 @@ public:
 
 private:
     SCISSOR_LIST m_ScissorList;
-    // Drawable pixels per window point: 2.0 on Retina, 1.0 elsewhere. Projections stay in
-    // points; only viewport/scissor rectangles (which are in pixels) are multiplied by it.
+    // Drawable pixels per logical game pixel (Retina factor x UIScale). Projections stay in
+    // logical pixels; only viewport/scissor rectangles (in drawable pixels) are multiplied.
     float m_PixelRatio = 1.0f;
     float PixelRatio() const { return FrameBufferDepth > 0 ? 1.0f : m_PixelRatio; }
     void UpdatePixelRatio();

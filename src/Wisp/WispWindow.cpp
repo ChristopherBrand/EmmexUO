@@ -45,7 +45,7 @@ void CWindow::MaximizeWindow()
 
 void CWindow::SetSize(const CSize &size)
 {
-    SDL_SetWindowSize(m_window, size.Width, size.Height);
+    SDL_SetWindowSize(m_window, size.Width * UIScale, size.Height * UIScale);
     m_Size = size;
 }
 
@@ -59,7 +59,7 @@ void CWindow::SetPositionSize(int x, int y, int width, int height)
 #endif
     SDL_RestoreWindow(m_window);
     SDL_SetWindowPosition(m_window, x, std::max(y, borderH));
-    SDL_SetWindowSize(m_window, width, height);
+    SDL_SetWindowSize(m_window, width * UIScale, height * UIScale);
 }
 
 void CWindow::GetPositionSize(int *x, int *y, int *width, int *height)
@@ -73,6 +73,8 @@ void CWindow::GetPositionSize(int *x, int *y, int *width, int *height)
     SDL_GetWindowPosition(m_window, x, y);
     *y = std::max(*y, borderH);
     SDL_GetWindowSize(m_window, width, height);
+    *width /= UIScale;
+    *height /= UIScale;
 }
 
 void CWindow::SetMinSize(const CSize &newMinSize)
@@ -98,7 +100,7 @@ void CWindow::SetMinSize(const CSize &newMinSize)
 #else
         int borderH = 0;
 #endif
-        SDL_SetWindowSize(m_window, width, height - borderH);
+        SDL_SetWindowSize(m_window, width * UIScale, height * UIScale - borderH);
     }
     m_MinSize = newMinSize;
 }
@@ -125,7 +127,8 @@ void CWindow::SetMaxSize(const CSize &newMaxSize)
 #else
         int borderH = 0;
 #endif
-        SDL_SetWindowMaximumSize(m_window, newMaxSize.Width, newMaxSize.Height - borderH);
+        SDL_SetWindowMaximumSize(
+            m_window, newMaxSize.Width * UIScale, newMaxSize.Height * UIScale - borderH);
     }
 
     m_MaxSize = newMaxSize;
@@ -153,7 +156,7 @@ bool CWindow::Create(const char *title, bool showCursor, int width, int height)
     m_Size.Width = width;
     m_Size.Height = height;
     m_window =
-        SDL_CreateWindow(title, 0, 0, width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        SDL_CreateWindow(title, 0, 0, width * UIScale, height * UIScale, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     if (m_window == nullptr)
     {
         SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "Coult not create window: %s\n", SDL_GetError());
@@ -300,7 +303,7 @@ bool CWindow::OnWindowProc(SDL_Event &ev)
                 case SDL_WINDOWEVENT_SIZE_CHANGED:
                 case SDL_WINDOWEVENT_RESIZED:
                 {
-                    m_Size = { ev.window.data1, ev.window.data2 };
+                    m_Size = { ev.window.data1 / UIScale, ev.window.data2 / UIScale };
                     OnResize();
                 }
                 break;

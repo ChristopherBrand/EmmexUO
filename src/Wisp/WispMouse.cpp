@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: 2020 Danny Angelo Carminati Grein
 
 #include "WispMouse.h"
+#include "WispWindow.h"
 #include <SDL_mouse.h>
 namespace Wisp
 {
@@ -22,6 +23,11 @@ CMouse::~CMouse()
 void CMouse::Update()
 {
     SDL_GetMouseState(&Position.X, &Position.Y);
+    if (g_WispWindow != nullptr && g_WispWindow->UIScale > 1)
+    {
+        Position.X /= g_WispWindow->UIScale;
+        Position.Y /= g_WispWindow->UIScale;
+    }
     Dragging = (LeftButtonPressed || RightButtonPressed || MidButtonPressed);
     RealPosition = Position;
 }

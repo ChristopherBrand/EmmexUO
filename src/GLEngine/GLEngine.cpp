@@ -281,8 +281,9 @@ void CGLEngine::UpdateRect()
 {
     ScopedPerfMarker(__FUNCTION__);
 
-    int width, height;
-    SDL_GetWindowSize(g_GameWindow.m_window, &width, &height);
+    const auto size = g_GameWindow.GetSize(); // logical pixels (OS window / UIScale)
+    const int width = size.Width;
+    const int height = size.Height;
     UpdatePixelRatio();
 
     ViewPort(0, 0, width, height);
@@ -343,7 +344,9 @@ void CGLEngine::UpdatePixelRatio()
     int windowW = 0, windowH = 0, drawableW = 0, drawableH = 0;
     SDL_GetWindowSize(g_GameWindow.m_window, &windowW, &windowH);
     SDL_GL_GetDrawableSize(g_GameWindow.m_window, &drawableW, &drawableH);
+    // drawable pixels per logical game pixel: Retina factor times the integer UI scale
     m_PixelRatio = (windowW > 0 && drawableW > 0) ? float(drawableW) / float(windowW) : 1.0f;
+    m_PixelRatio *= float(g_GameWindow.UIScale);
 }
 
 void CGLEngine::SetViewport(int x, int y, int width, int height)

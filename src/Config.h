@@ -17,6 +17,7 @@ struct Config
     astr_t ServerAddress;
     astr_t LocaleOverride;
     uint16_t ServerPort = 2593;
+    int UIScale = 1; // integer scale of the whole client (window = game size * UIScale)
     uint16_t ClientFlag = 0;
     bool SavePassword = false;
     bool AutoLogin = false;

@@ -332,6 +332,7 @@ int main(int argc, char **argv)
 #if defined(NEW_RENDERER_ENABLED) && (defined(USE_GL3) || defined(USE_GLES) || defined(RENDERER_LEGACY))
         gfx_render_list_init();
 #endif // #if defined(NEW_RENDERER_ENABLED) && (defined(USE_GL3) || defined(USE_GLES) || defined(RENDERER_LEGACY))
+        g_GameWindow.UIScale = g_Config.UIScale;
         if (!g_GameWindow.Create(CLIENT_TITLE, false, 640, 480))
         {
             const char *errMsg =
