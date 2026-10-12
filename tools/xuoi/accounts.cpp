@@ -125,6 +125,39 @@ void write_accounts(void *_fp)
     }
 }
 
+static int s_select_request = -1;
+
+bool accounts_empty()
+{
+    return s_accounts.entries.size() < 2; // <new> is always first
+}
+
+int account_add(const char *profile, const char *loginserver, const char *clientversion, const char *datapath)
+{
+    int index = -1;
+    for (size_t i = 1; i < s_accounts.entries.size(); ++i)
+    {
+        if (s_accounts.entries[i].account_profile == profile)
+            index = int(i);
+    }
+    if (index == -1)
+    {
+        account::entry entry;
+        entry.account_profile = profile;
+        index = int(s_accounts.entries.size());
+        s_accounts.entries.emplace_back(entry);
+        s_account_by_name[profile] = index;
+    }
+    auto &e = s_accounts.entries[index];
+    e.account_loginserver = loginserver;
+    e.account_clientversion = clientversion;
+    e.account_data_path = datapath;
+    e.account_crypt = false;
+    s_select_request = index;
+    save_config();
+    return index;
+}
+
 int account_index_by_profilename(const char *name)
 {
     auto it = s_account_by_name.find(name);
@@ -161,6 +194,32 @@ static fs_path account_create_config(const account::entry &account)
     std::replace(name.begin(), name.end(), ' ', '_');
 
     const auto fname = fs_path_join(xuol_data_path(), name);
+
+    // The client saves its own settings (e.g. UIScale) back into this file. Keep every key
+    // the launcher doesn't own so relaunching a profile doesn't reset them.
+    static const char *owned_keys[] = {
+#define CFG_FIELD(s, n, default, t) #n,
+#include "cfg_crossuo.h"
+    };
+    std::vector<astr_t> preserved;
+    if (auto in = fs_open(fname, FS_READ))
+    {
+        char line[1024];
+        while (fgets(line, sizeof(line), in))
+        {
+            const char *eq = strchr(line, '=');
+            if (!eq)
+                continue;
+            const astr_t key(line, eq - line);
+            bool owned = false;
+            for (const auto k : owned_keys)
+                owned |= strcasecmp(k, key.c_str()) == 0;
+            if (!owned)
+                preserved.emplace_back(line);
+        }
+        fs_close(in);
+    }
+
     auto fp = fs_open(fname, FS_WRITE);
     if (!fp)
     {
@@ -180,6 +239,8 @@ static fs_path account_create_config(const account::entry &account)
     entry.crossuo_loginserver = account.account_loginserver;
 
     crossuo::write(fp, entry, nullptr);
+    for (const auto &l : preserved)
+        fputs(l.c_str(), fp);
     fclose(fp);
     return fname;
 }
@@ -291,6 +352,12 @@ void ui_accounts(ui_model &m)
     const auto picked = shard_picked();
     if (picked != -1)
         update_view = true;
+    if (s_select_request != -1)
+    {
+        acct_id = s_select_request;
+        s_select_request = -1;
+        update_view = true;
+    }
 
     auto update_shard = [](int id) {
         auto shard = shard_by_id(id);

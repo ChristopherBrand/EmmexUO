@@ -62,6 +62,7 @@ public:
     void ShowWindow(bool show) const;
     bool IsMinimizedWindow() const;
     bool IsMaximizedWindow() const;
+    bool IsFullscreen() const;
     void CreateTimer(uint32_t id, int delay);
     void RemoveTimer(uint32_t id);
     void Raise();

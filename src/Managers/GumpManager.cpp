@@ -1473,6 +1473,9 @@ void CGumpManager::Load(const fs_path &path)
         }
 
         AddGump(new CGumpPaperdoll(g_PlayerSerial, x, y, false));
+        // first run: the backpack goes under the paperdoll instead of over the game view corner
+        const int backpackX = x;
+        const int backpackY = std::min(y + 300, std::max(0, windowSize.Height - 220));
         x = g_ConfigManager.GameWindowX + g_ConfigManager.GameWindowWidth;
         y = g_ConfigManager.GameWindowY + g_ConfigManager.GameWindowHeight - 50;
 
@@ -1494,13 +1497,7 @@ void CGumpManager::Load(const fs_path &path)
             if (backpack != nullptr)
             {
                 g_ContainerStack.push_back(CContainerStackItem(
-                    backpack->Serial,
-                    g_ConfigManager.GameWindowX,
-                    g_ConfigManager.GameWindowY,
-                    g_ConfigManager.GameWindowX,
-                    g_ConfigManager.GameWindowY,
-                    false,
-                    false));
+                    backpack->Serial, backpackX, backpackY, backpackX, backpackY, false, false));
 
                 g_UseItemActions.Add(backpack->Serial);
                 //g_Game. DoubleClick(backpack->Serial);

@@ -2216,7 +2216,18 @@ PACKET_HANDLER(OpenPaperdoll)
 
     if (gump == nullptr)
     {
-        gump = new CGumpPaperdoll(serial, 0, 0, false);
+        // Own paperdoll on the right; others cascade near the center rather than at 0,0.
+        static int s_cascade = 0;
+        const CSize window = g_GameWindow.GetSize();
+        int x = window.Width - 270;
+        int y = 40;
+        if (serial != g_PlayerSerial)
+        {
+            x = window.Width / 2 - 130 + s_cascade * 24;
+            y = 80 + s_cascade * 24;
+            s_cascade = (s_cascade + 1) % 6;
+        }
+        gump = new CGumpPaperdoll(serial, std::max(0, x), y, false);
         g_GumpManager.AddGump(gump);
     }
 

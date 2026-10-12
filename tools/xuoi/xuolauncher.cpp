@@ -23,6 +23,7 @@
 
 #include "icon_launcher.h"
 #include "accounts.h"
+#include "data_setup.h"
 #include "shards.h"
 #include "widgets.h"
 #include "ui_model.h"
@@ -355,6 +356,8 @@ int main(int argc, char **argv)
     load_config();
     load_accounts();
     load_shards();
+    if (accounts_empty())
+        model.view = ui_view::data_setup;
 
 #if !defined(XUO_DEPLOY)
     config().global_auto_update = false;
@@ -393,7 +396,8 @@ int main(int argc, char **argv)
         {
             LOG_ERROR("could not initialize updater, ignoring updates");
         }
-        model.view = s_has_update ? ui_view::updates : ui_view::accounts;
+        if (model.view != ui_view::data_setup)
+            model.view = s_has_update ? ui_view::updates : ui_view::accounts;
     };
     auto update_run = []() {
         s_updated = xuo_update_apply(s_ctx);
@@ -465,6 +469,9 @@ int main(int argc, char **argv)
                     selected = model.view == ui_view::backups;
                     if (ImGui::MenuItem(ICON_FK_FILE_ARCHIVE_O " Backups", nullptr, &selected))
                         model.view = ui_view::backups;
+                    selected = model.view == ui_view::data_setup;
+                    if (ImGui::MenuItem(ICON_FK_FOLDER " Game Data", nullptr, &selected))
+                        model.view = ui_view::data_setup;
                     selected = model.view == ui_view::shards;
                     if (ImGui::MenuItem(ICON_FK_GLOBE_W " Shards", nullptr, &selected))
                         model.view = ui_view::shards;
@@ -540,6 +547,8 @@ int main(int argc, char **argv)
                 ui_shards(model);
             else if (model.view == ui_view::shard_picker)
                 ui_shards(model, true);
+            else if (model.view == ui_view::data_setup)
+                ui_data_setup(model);
 
             if (s_launcher_restart)
                 s_launcher_quit = DialogYesNo(
@@ -552,6 +561,7 @@ int main(int argc, char **argv)
 
     if (update_worker.joinable())
         update_worker.join();
+    data_setup_shutdown();
 
     if (s_ctx)
         xuo_shutdown(s_ctx);

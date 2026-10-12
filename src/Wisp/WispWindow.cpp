@@ -180,6 +180,15 @@ bool CWindow::Create(const char *title, bool showCursor, int width, int height)
     {
         return false;
     }
+    if (UIScale <= 0)
+    {
+        // Not configured: one step per 720 points of screen height, so the 640x480-era
+        // UI is comfortable on large displays (1440p -> 2x, 4K at 1x -> 3x, Retina laptops -> 1x).
+        SDL_Rect r{};
+        SDL_GetDisplayBounds(0, &r); // full height: usable bounds lose the menu bar
+        UIScale = std::min(std::max(r.h / 720, 1), 4);
+        Info(Client, "UI scale %d picked for a %dx%d display", UIScale, r.w, r.h);
+    }
 
     m_Size.Width = width;
     m_Size.Height = height;
@@ -602,6 +611,11 @@ void CWindow::ShowWindow(bool show) const
 bool CWindow::IsMinimizedWindow() const
 {
     return (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED) != 0;
+}
+
+bool CWindow::IsFullscreen() const
+{
+    return (SDL_GetWindowFlags(m_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) != 0;
 }
 
 bool CWindow::IsMaximizedWindow() const

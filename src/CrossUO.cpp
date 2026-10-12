@@ -5862,7 +5862,9 @@ void CGame::OpenWorldMap()
 
 void CGame::OpenJournal()
 {
-    g_GumpManager.AddGump(new CGumpJournal(0, 0, false, 250));
+    // bottom-left of the window, clear of the menubar and the top-left corner gumps
+    const int y = std::max(40, g_GameWindow.GetSize().Height - 250 - 90);
+    g_GumpManager.AddGump(new CGumpJournal(g_ConfigManager.GameWindowX + 8, y, false, 250));
 }
 
 void CGame::OpenSkills()

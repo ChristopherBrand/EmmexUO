@@ -159,6 +159,45 @@ bool http_get_string(const char *url, std::string &data)
     return result == CURLE_OK;
 }
 
+struct http_progress_ctx
+{
+    http_progress_fn fn;
+    void *user;
+};
+
+static int http_xferinfo(void *p, curl_off_t dltotal, curl_off_t dlnow, curl_off_t, curl_off_t)
+{
+    auto ctx = (http_progress_ctx *)p;
+    return ctx->fn(ctx->user, uint64_t(dlnow), uint64_t(dltotal)) ? 0 : 1; // non-zero aborts
+}
+
+bool http_get_file(const char *url, const char *filename, http_progress_fn progress, void *user)
+{
+    assert(s_curl_handle && "http_init wasn't called");
+    assert(url && filename && progress);
+    LOG_INFO("Downloading %s", url);
+    FILE *fp = fopen(filename, "wb");
+    if (!fp)
+        return false;
+    http_progress_ctx ctx{ progress, user };
+    CURL *curl = curl_easy_duphandle(s_curl_handle);
+    assert(curl);
+    if (s_agentName)
+        DO_CURL(setopt(curl, CURLOPT_USERAGENT, s_agentName));
+    DO_CURL(setopt(curl, CURLOPT_FOLLOWLOCATION, 1));
+    DO_CURL(setopt(curl, CURLOPT_FAILONERROR, 1));
+    DO_CURL(setopt(curl, CURLOPT_URL, url));
+    DO_CURL(setopt(curl, CURLOPT_WRITEDATA, fp));
+    DO_CURL(setopt(curl, CURLOPT_NOPROGRESS, 0L));
+    DO_CURL(setopt(curl, CURLOPT_XFERINFOFUNCTION, http_xferinfo));
+    DO_CURL(setopt(curl, CURLOPT_XFERINFODATA, &ctx));
+    CURLcode result;
+    DO_CURL_RET(result, perform(curl));
+    curl_easy_cleanup(curl);
+    fclose(fp);
+    return result == CURLE_OK;
+}
+
 bool http_get_file(const char *url, const char *filename)
 {
     assert(s_curl_handle && "http_init wasn't called");

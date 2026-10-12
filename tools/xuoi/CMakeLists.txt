@@ -37,6 +37,8 @@ set(XUOL_SRCS
   xuolauncher.cpp
   accounts.cpp
   accounts.h
+  data_setup.cpp
+  data_setup.h
   ui_model.cpp
   ui_model.h
   ui_shards.cpp

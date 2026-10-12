@@ -168,6 +168,7 @@ enum
     CMKC_LARGEGUMPS,
 
     CMKC_FIT_GAME_WINDOW,
+    CMKC_FULLSCREEN,
     CMKC_COUNT
 };
 
@@ -311,6 +312,7 @@ static const ConfigEntry s_Keys[] = {
     { CMKC_DRAW_STATUS_FOR_HUMANOIDS, "drawstatusforhumanoids" },
     { CMKC_LARGEGUMPS, "largegumps" },
     { CMKC_FIT_GAME_WINDOW, "fitgamewindow" },
+    { CMKC_FULLSCREEN, "fullscreen" },
     { CMKC_COUNT, nullptr },
 };
 
@@ -1018,6 +1020,7 @@ bool CConfigManager::Load(const fs_path &path)
     TextFileParser file(path, "=", "#;", "");
 
     bool zoomed = false;
+    bool fullscreen = false;
     int windowX = -1;
     int windowY = -1;
     int windowWidth = -1;
@@ -1432,6 +1435,9 @@ bool CConfigManager::Load(const fs_path &path)
                 case CMKC_FIT_GAME_WINDOW:
                     FitGameWindow = str_to_bool(strings[1]);
                     break;
+                case CMKC_FULLSCREEN:
+                    fullscreen = str_to_bool(strings[1]);
+                    break;
                 case CMKC_DEVELOPER_MODE:
                     g_DeveloperMode = (DEVELOPER_MODE)str_to_int(strings[1]);
                     break;
@@ -1546,6 +1552,11 @@ bool CConfigManager::Load(const fs_path &path)
     else
     {
         g_GameScreen.SetMaximized(true);
+    }
+
+    if (fullscreen && g_GameState >= GS_GAME && !g_GameWindow.IsFullscreen())
+    {
+        g_GameWindow.ToggleFullscreen();
     }
 
     return true;
@@ -1740,6 +1751,7 @@ void CConfigManager::Save(const fs_path &path)
         writer.WriteInt("GameWindowY", GameWindowY);
 
         writer.WriteBool("Zoomed", g_GameWindow.IsMaximizedWindow());
+        writer.WriteBool("Fullscreen", g_GameWindow.IsFullscreen());
 
         int x, y, w, h;
         g_GameWindow.GetPositionSize(&x, &y, &w, &h);

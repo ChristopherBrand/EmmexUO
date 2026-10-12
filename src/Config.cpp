@@ -611,7 +611,7 @@ void SaveGlobalConfig()
         fprintf(cfg, "ProtocolClientVersion=%s\n", g_Config.ProtocolClientVersionString.c_str());
     }
 
-    if (g_Config.UIScale != 1)
+    if (g_Config.UIScale != 0) // only once chosen explicitly (Cmd+= / Cmd+-)
     {
         fprintf(cfg, "UIScale=%d\n", g_Config.UIScale);
     }

@@ -12,6 +12,7 @@ enum class ui_view : uint32_t
     backups,
     shards,
     shard_picker,
+    data_setup,
 
     count,
 };

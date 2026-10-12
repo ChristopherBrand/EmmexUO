@@ -406,7 +406,7 @@ void CGameWindow::OnKeyDown(const KeyEvent &ev)
             key == SDLK_MINUS || key == SDLK_KP_MINUS)
         {
             const int step = (key == SDLK_MINUS || key == SDLK_KP_MINUS) ? -1 : 1;
-            g_Config.UIScale = std::min(std::max(g_Config.UIScale + step, 1), 4);
+            g_Config.UIScale = std::min(std::max(UIScale + step, 1), 4);
             SetUIScale(g_Config.UIScale);
             return;
         }
