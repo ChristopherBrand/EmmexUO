@@ -1476,18 +1476,9 @@ void CGumpManager::Load(const fs_path &path)
         // first run: the backpack goes under the paperdoll instead of over the game view corner
         const int backpackX = x;
         const int backpackY = std::min(y + 300, std::max(0, windowSize.Height - 220));
-        x = g_ConfigManager.GameWindowX + g_ConfigManager.GameWindowWidth;
-        y = g_ConfigManager.GameWindowY + g_ConfigManager.GameWindowHeight - 50;
-
-        if (x + 150 >= windowSize.Width)
-        {
-            x = windowSize.Width - 150;
-        }
-
-        if (y + 60 >= windowSize.Height)
-        {
-            y = windowSize.Height - 60;
-        }
+        // bottom-right; the expanded status gump is about 530x170
+        x = std::max(0, windowSize.Width - 540);
+        y = std::max(0, windowSize.Height - 215);
 
         AddGump(new CGumpStatusbar(g_PlayerSerial, x, y, false));
         AddGump(new CGumpMinimap(g_ConfigManager.GameWindowX, g_ConfigManager.GameWindowY, true));
@@ -1516,17 +1507,9 @@ void CGumpManager::Load(const fs_path &path)
     {
         CSize windowSize = g_GameWindow.GetSize();
 
-        int x = g_ConfigManager.GameWindowX + (int)(g_ConfigManager.GameWindowWidth * 0.7f);
-        int y = g_ConfigManager.GameWindowY + g_ConfigManager.GameWindowHeight;
-        if (x + 100 >= windowSize.Width)
-        {
-            x = windowSize.Width - 100;
-        }
-
-        if (y + 60 >= windowSize.Height)
-        {
-            y = windowSize.Height - 60;
-        }
+        // left of the status gump at the bottom-right
+        const int x = std::max(0, windowSize.Width - 540 - 130);
+        const int y = std::max(0, windowSize.Height - 100);
 
         AddGump(new CGumpBuff(x, y));
     }

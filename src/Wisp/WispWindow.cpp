@@ -41,6 +41,17 @@ void CWindow::MaximizeWindow()
 {
     SDL_RestoreWindow(m_window);
     SDL_MaximizeWindow(m_window);
+
+    // The resize event arrives later; predict the size now so gumps created in the
+    // meantime (e.g. the default layout at login) are placed for the final window.
+    SDL_Rect r{};
+    if (SDL_GetDisplayUsableBounds(SDL_GetWindowDisplayIndex(m_window), &r) == 0)
+    {
+        int top = 0;
+        SDL_GetWindowBordersSize(m_window, &top, nullptr, nullptr, nullptr);
+        m_Size.Width = r.w / UIScale;
+        m_Size.Height = (r.h - top) / UIScale;
+    }
 }
 
 void CWindow::SetSize(const CSize &size)
@@ -88,6 +99,7 @@ void CWindow::SetPositionSize(int x, int y, int width, int height)
     SDL_RestoreWindow(m_window);
     SDL_SetWindowPosition(m_window, x, std::max(y, borderH));
     SDL_SetWindowSize(m_window, width * UIScale, height * UIScale);
+    m_Size = CSize(width, height); // don't wait for the resize event (see MaximizeWindow)
 }
 
 void CWindow::GetPositionSize(int *x, int *y, int *width, int *height)

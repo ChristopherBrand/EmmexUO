@@ -1515,6 +1515,10 @@ bool CConfigManager::Load(const fs_path &path)
         if (zoomed)
         {
             g_GameScreen.SetMaximized(true);
+            if (g_GameState >= GS_GAME)
+            {
+                g_GameWindow.MaximizeWindow(); // now, so the size is known before gumps load
+            }
 #ifdef NEW_RENDERER_ENABLED
             // FIXME this should be deferred until there's something to draw
             // and set once at the beginning of the renderer frame, where there's
