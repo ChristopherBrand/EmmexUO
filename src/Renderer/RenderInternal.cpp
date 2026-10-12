@@ -475,13 +475,8 @@ bool Render_CreateShaderPipeline(
             return false;
         }
 
-        // Validation checks the program against the *current* GL state (e.g. a bound VAO in
-        // core profiles), so at load time it can fail for programs that link and draw fine.
-        GL_CHECK(glValidateProgram(program));
-        if (!validate_program(program, GL_VALIDATE_STATUS))
-        {
-            Warning(Renderer, "shader validation failed against the current GL state");
-        }
+        // No glValidateProgram here: it checks against the *current* GL state, and with no VAO
+        // bound at load time core profiles (macOS) always fail it for programs that draw fine.
         return true;
     };
 
@@ -718,6 +713,10 @@ bool Render_AppendCmd(RenderCmdList *cmdList, const void *cmd, uint32_t cmdSize)
     assert(cmd);
     assert(cmdSize);
 
+    if (cmdList->immediateMode)
+    {
+        return true;
+    }
     if (cmdList->remainingSize >= cmdSize)
     {
         memcpy(cmdList->data + cmdList->size - cmdList->remainingSize, cmd, cmdSize);
@@ -734,6 +733,10 @@ bool Render_AppendCmdType(
     RenderCmdList *cmdList, RenderCommandType type, const void *cmd, uint32_t cmdSize)
 {
     static_assert(sizeof(type) == sizeof(uint8_t), "command type id is assumed to be byte sized");
+    if (cmdList->immediateMode)
+    {
+        return true; // the caller draws it now; RenderDraw_Execute never replays an immediate list
+    }
     if (cmdList->remainingSize >= sizeof(type) + cmdSize)
     {
         auto ptr = cmdList->data + cmdList->size - cmdList->remainingSize;

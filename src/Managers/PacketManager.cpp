@@ -1644,7 +1644,7 @@ PACKET_HANDLER(UpdateObject)
         g_World->PutEquipment(item, obj, layer);
         item->OnGraphicChange();
 
-        Info(Network, "\t0x%08X:%04X [%d] %04X", item->Serial, item->Graphic, layer, item->Color);
+        LogTrace(Network, "\t0x%08X:%04X [%d] %04X", item->Serial, item->Graphic, layer, item->Color);
 
         g_World->MoveToTop(item);
 

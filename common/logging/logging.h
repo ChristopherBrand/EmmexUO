@@ -52,6 +52,9 @@ extern eLogSystem g_LogEnabled;
     LogHexBuffer(eLogSystem::LogSystem##system, int(level), __VA_ARGS__)
 
 #define Info(system, ...) LOG_(system, INFO, __VA_ARGS__)
+// Per-object/per-packet chatter: below the stderr (1) and file (INFO) cutoffs, so it costs
+// one comparison unless run with -v 2.
+#define LogTrace(system, ...) LOG_(system, 2, __VA_ARGS__)
 #define Warning(system, ...) LOG_(system, WARNING, __VA_ARGS__)
 #define Error(system, ...) LOG_(system, ERROR, __VA_ARGS__)
 
@@ -98,6 +101,7 @@ extern fatalErrorCb g_fatalErrorCb;
 #define TRACE(...)
 #define DEBUG(...)
 #define Info(...)
+#define LogTrace(...)
 #define Warning(...)
 #define Error(...)
 #define Fatal(...)
