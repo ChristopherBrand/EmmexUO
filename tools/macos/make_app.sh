@@ -40,7 +40,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleVersion</key>           <string>$VERSION</string>
     <key>LSMinimumSystemVersion</key>    <string>11.0</string>
     <key>LSApplicationCategoryType</key> <string>public.app-category.role-playing-games</string>
-    <key>NSHighResolutionCapable</key>   <false/>
+    <key>NSHighResolutionCapable</key>   <true/>
 </dict>
 </plist>
 EOF

@@ -536,7 +536,13 @@ struct CFileManager : public CDataReader // FIXME: not needed
 
     bool UopLoadFile(CUopMappedFile &file, const char *fileName, bool dumpFile = false);
 
+    // Compressed UOP gumps (zlib, or zlib+BWT in newer clients) are decoded on first use;
+    // fills in io.Address/DataSize/Width/Height. Returns false if the gump can't be decoded.
+    bool PrepareGump(CIndexObject &io);
+
 private:
+    std::unordered_map<const UopFileEntry *, std::vector<uint8_t>> m_DecodedGumps;
+
     UopAnimationHeader UopReadAnimationHeader();
     UopAnimationFrame UopReadAnimationFrame();
     std::vector<UopAnimationFrame> UopReadAnimationFramesData();

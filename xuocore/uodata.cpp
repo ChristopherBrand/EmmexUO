@@ -5,6 +5,7 @@
 #include "mappedfile.h"
 #include "mulstruct.h"
 #include "text_parser.h"
+#include "bwt.h"
 
 #include <stdarg.h>
 #include <thread>
@@ -591,6 +592,7 @@ void CFileManager::Unload()
     m_SoundMul.Unload();
     m_ArtLegacyMUL.Unload();
     m_GumpartLegacyMUL.Unload();
+    m_DecodedGumps.clear();
     m_SoundLegacyMUL.Unload();
     m_Tileart.Unload();
     m_MultiCollection.Unload();
@@ -1279,7 +1281,14 @@ void CFileManager::UopReadIndexFile(
             obj->UopBlock = block;
             //obj->ID = -1;
 
-            if (isGump)
+            if (isGump && block->Flags != 0)
+            {
+                // compressed: width/height live inside the compressed stream, see PrepareGump
+                obj->DataSize = block->CompressedSize;
+                obj->Width = 0;
+                obj->Height = 0;
+            }
+            else if (isGump)
             {
                 obj->Address += 8;
                 obj->DataSize -= 8;
@@ -1292,6 +1301,59 @@ void CFileManager::UopReadIndexFile(
             }
         }
     }
+}
+
+bool CFileManager::PrepareGump(CIndexObject &io)
+{
+    const auto block = io.UopBlock;
+    if (block == nullptr || block->Flags == 0 || io.Width != 0)
+    {
+        return io.Width > 0 && io.Height > 0; // uncompressed, patched or already decoded
+    }
+
+    auto it = m_DecodedGumps.find(block);
+    if (it == m_DecodedGumps.end())
+    {
+        std::vector<uint8_t> inflated(block->DecompressedSize);
+        auto src = m_GumpartLegacyMUL.Start + block->Offset + block->MetadataSize;
+        if (inflated.empty() || !DecompressBlock(block, inflated.data(), src))
+        {
+            return false;
+        }
+        std::vector<uint8_t> decoded;
+        if (block->Flags == 3)
+        {
+            if (!uo_bwt_decompress(inflated.data(), inflated.size(), decoded))
+            {
+                Warning(Data, "failed to decode BWT gump (hash %016" PRIx64 ")", block->Hash);
+                return false;
+            }
+        }
+        else
+        {
+            decoded = std::move(inflated);
+        }
+        it = m_DecodedGumps.emplace(block, std::move(decoded)).first;
+    }
+
+    const auto &data = it->second;
+    if (data.size() < 8)
+    {
+        return false;
+    }
+    uint32_t width, height;
+    memcpy(&width, &data[0], sizeof(width));
+    memcpy(&height, &data[4], sizeof(height));
+    if (width == 0 || height == 0 || width > 4096 || height > 4096 ||
+        size_t(height) * 4 > data.size() - 8)
+    {
+        return false; // empty placeholder entry or corrupt data
+    }
+    io.Address = uintptr_t(data.data() + 8);
+    io.DataSize = checked_cast<uint32_t>(data.size() - 8);
+    io.Width = int32_t(width);
+    io.Height = int32_t(height);
+    return true;
 }
 
 UopAnimationHeader CFileManager::UopReadAnimationHeader()

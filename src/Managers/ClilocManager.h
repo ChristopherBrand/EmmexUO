@@ -6,6 +6,7 @@
 #include <common/str.h>
 #include <xuocore/mappedfile.h>
 #include <map>
+#include <vector>
 #include "../BaseQueue.h"
 
 class CCliloc : public CBaseQueueItem
@@ -17,6 +18,9 @@ public:
     astr_t Language;
     bool Loaded = false;
     CMappedFile m_File;
+    // View used for lookups: the mapped file, or m_Decoded for BWT-compressed clilocs.
+    CDataReader m_Data;
+    std::vector<uint8_t> m_Decoded;
 
     CCliloc(const astr_t &lang);
     virtual ~CCliloc();

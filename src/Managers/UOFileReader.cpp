@@ -14,6 +14,7 @@ UOFileReader g_UOFileReader;
 
 std::vector<uint16_t> UOFileReader::GetGumpPixels(CIndexObject &io)
 {
+    g_FileManager.PrepareGump(io);
     size_t dataStart = io.Address;
     uint32_t *lookupList = (uint32_t *)dataStart;
 

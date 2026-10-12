@@ -111,6 +111,8 @@ void CGLFrameBuffer::Release()
 
 #ifndef NEW_RENDERER_ENABLED
     glBindFramebuffer(GL_FRAMEBUFFER, m_OldFrameBuffer);
+    if (g_GL.FrameBufferDepth > 0)
+        g_GL.FrameBufferDepth--;
 
     glBindTexture(GL_TEXTURE_2D, Texture.Texture);
     glGenerateMipmap(GL_TEXTURE_2D);
@@ -165,6 +167,7 @@ bool CGLFrameBuffer::Use()
 
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, &m_OldFrameBuffer);
         glBindFramebuffer(GL_FRAMEBUFFER, m_FrameBuffer);
+        g_GL.FrameBufferDepth++; // FBO textures are in logical pixels: no Retina scaling
         glBindTexture(GL_TEXTURE_2D, Texture.Texture);
 
         glViewport(0, 0, Texture.Width, Texture.Height);

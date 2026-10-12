@@ -282,8 +282,8 @@ void CGLEngine::UpdateRect()
     ScopedPerfMarker(__FUNCTION__);
 
     int width, height;
-    //SDL_GL_GetDrawableSize(g_GameWindow.m_window, &width, &height);
     SDL_GetWindowSize(g_GameWindow.m_window, &width, &height);
+    UpdatePixelRatio();
 
     ViewPort(0, 0, width, height);
     //ViewPort(0, 0, g_GameWindow.GetSize().Width, g_GameWindow.GetSize().Height);
@@ -338,10 +338,35 @@ void CGLEngine::BindTexture32(CGLTexture &texture, int width, int height, uint32
     texture.Texture = tex;
 }
 
+void CGLEngine::UpdatePixelRatio()
+{
+    int windowW = 0, windowH = 0, drawableW = 0, drawableH = 0;
+    SDL_GetWindowSize(g_GameWindow.m_window, &windowW, &windowH);
+    SDL_GL_GetDrawableSize(g_GameWindow.m_window, &drawableW, &drawableH);
+    m_PixelRatio = (windowW > 0 && drawableW > 0) ? float(drawableW) / float(windowW) : 1.0f;
+}
+
+void CGLEngine::SetViewport(int x, int y, int width, int height)
+{
+    const float r = PixelRatio();
+    glViewport(int(x * r), int(y * r), int(width * r), int(height * r));
+}
+
+void CGLEngine::SetScissor(const CRect &rect)
+{
+    const float r = PixelRatio();
+    GL_CALL(glScissor(
+        int(rect.Position.X * r),
+        int(rect.Position.Y * r),
+        int(rect.Size.Width * r),
+        int(rect.Size.Height * r)));
+}
+
 void CGLEngine::BeginDraw()
 {
     ScopedPerfMarker(__FUNCTION__);
     Drawing = true;
+    UpdatePixelRatio(); // the window may have moved between Retina and non-Retina displays
     GL_CALL(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT));
     GL_CALL(glLoadIdentity());
 
@@ -365,7 +390,7 @@ void CGLEngine::EndDraw()
 void CGLEngine::ViewPortScaled(int x, int y, int width, int height)
 {
     ScopedPerfMarker(__FUNCTION__);
-    glViewport(x, g_GameWindow.GetSize().Height - y - height, width, height);
+    SetViewport(x, g_GameWindow.GetSize().Height - y - height, width, height);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
 
@@ -389,7 +414,7 @@ void CGLEngine::ViewPort(int x, int y, int width, int height)
 {
     ScopedPerfMarker(__FUNCTION__);
     const auto size = g_GameWindow.GetSize();
-    glViewport(x, size.Height - y - height, width, height);
+    SetViewport(x, size.Height - y - height, width, height);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glOrtho(x, width + x, height + y, y, -150.0, 150.0);
@@ -400,7 +425,7 @@ void CGLEngine::ViewPort(int x, int y, int width, int height)
 void CGLEngine::RestorePort()
 {
     ScopedPerfMarker(__FUNCTION__);
-    glViewport(0, 0, g_GameWindow.GetSize().Width, g_GameWindow.GetSize().Height);
+    SetViewport(0, 0, g_GameWindow.GetSize().Width, g_GameWindow.GetSize().Height);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     glOrtho(0.0, g_GameWindow.GetSize().Width, g_GameWindow.GetSize().Height, 0.0, -150.0, 150.0);
@@ -433,7 +458,7 @@ void CGLEngine::PushScissor(const CRect &rect)
     ScopedPerfMarker(__FUNCTION__);
     m_ScissorList.push_back(rect);
     GL_CALL(glEnable(GL_SCISSOR_TEST));
-    GL_CALL(glScissor(rect.Position.X, rect.Position.Y, rect.Size.Width, rect.Size.Height));
+    SetScissor(rect);
 }
 
 void CGLEngine::PopScissor()
@@ -451,8 +476,7 @@ void CGLEngine::PopScissor()
     }
     else
     {
-        CRect &rect = m_ScissorList.back();
-        GL_CALL(glScissor(rect.Position.X, rect.Position.Y, rect.Size.Width, rect.Size.Height));
+        SetScissor(m_ScissorList.back());
     }
 }
 

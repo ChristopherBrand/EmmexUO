@@ -33,9 +33,18 @@ public:
     texture_handle_t OldTexture = 0;
     float SittingCharacterOffset = 8.0f;
     SDL_GLContext m_context;
+    // Framebuffer objects currently bound via CGLFrameBuffer::Use (nesting depth).
+    int FrameBufferDepth = 0;
 
 private:
     SCISSOR_LIST m_ScissorList;
+    // Drawable pixels per window point: 2.0 on Retina, 1.0 elsewhere. Projections stay in
+    // points; only viewport/scissor rectangles (which are in pixels) are multiplied by it.
+    float m_PixelRatio = 1.0f;
+    float PixelRatio() const { return FrameBufferDepth > 0 ? 1.0f : m_PixelRatio; }
+    void UpdatePixelRatio();
+    void SetViewport(int x, int y, int width, int height);
+    void SetScissor(const CRect &rect);
 
 public:
     CGLEngine();

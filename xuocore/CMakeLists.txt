@@ -24,6 +24,7 @@ set(XUOCORE_SRCS
   uo_installer.cpp
   uo_installer.h
   uop.cpp
+  bwt.cpp
   uodata.cpp
   mappedfile.cpp
   client_info.cpp

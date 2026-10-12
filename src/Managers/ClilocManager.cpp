@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <common/str.h>
 #include "ClilocManager.h"
+#include <xuocore/bwt.h>
 #include "../Application.h"
 #include "../Globals.h" // g_Language
 
@@ -27,6 +28,27 @@ CCliloc::CCliloc(const astr_t &lang)
         auto path = g_App.UOFilesPath(file);
         Loaded = m_File.Load(path);
     }
+    if (Loaded)
+    {
+        // Newer clients ship BWT-compressed clilocs, flagged by 0x8E in the 4th byte
+        // (same detection as ClassicUO's ClilocLoader).
+        if (m_File.Size > 4 && m_File.Start[3] == 0x8E)
+        {
+            if (uo_bwt_decompress(m_File.Start, m_File.Size, m_Decoded) && m_Decoded.size() > 6)
+            {
+                m_Data.SetData(m_Decoded.data(), m_Decoded.size());
+            }
+            else
+            {
+                Warning(Data, "could not decode compressed Cliloc.%s", Language.c_str());
+                Loaded = false;
+            }
+        }
+        else
+        {
+            m_Data.SetData(m_File.Start, m_File.Size);
+        }
+    }
 }
 
 CCliloc::~CCliloc()
@@ -39,24 +61,28 @@ astr_t CCliloc::Load(uint32_t id)
     astr_t result;
     if (Loaded)
     {
-        m_File.ResetPtr();
-        m_File.Move(6);
-        while (!m_File.IsEOF())
+        m_Data.ResetPtr();
+        m_Data.Move(6);
+        while (m_Data.Ptr + 7 <= m_Data.End)
         {
-            auto currentID = m_File.ReadUInt32LE();
-            m_File.Move(1);
-            short len = m_File.ReadUInt16LE();
+            auto currentID = m_Data.ReadUInt32LE();
+            m_Data.Move(1);
+            const uint16_t len = m_Data.ReadUInt16LE();
+            if (m_Data.Ptr + len > m_Data.End)
+            {
+                break; // truncated or corrupt entry
+            }
             if (currentID == id)
             {
                 if (len > 0)
                 {
-                    result = m_File.ReadString(len);
+                    result = m_Data.ReadString(len);
                     s_Cache[currentID] = result;
                 }
                 return result;
             }
 
-            m_File.Move(len);
+            m_Data.Move(len);
         }
     }
     return result;
