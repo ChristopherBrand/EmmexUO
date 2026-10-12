@@ -2,6 +2,8 @@
 // SPDX-FileCopyrightText: 2020 Everton Fernando Patitucci da Silva
 
 #if defined(NEW_RENDERER_ENABLED) && !defined(RENDERER_LEGACY) && (defined(USE_GL3) || defined(USE_GLES))
+// Backend-neutral: builds vertices and drives RenderState_*; the actual GPU calls go through
+// RenderBackend_* (RenderInternal.cpp for OpenGL, RenderMetal.mm for Metal).
 #include "../Renderer/RenderAPI.h"
 #include <xuocore/enumlist.h>
 #define RENDERER_INTERNAL
@@ -116,7 +118,7 @@ bool RenderDraw_DrawQuad(const DrawQuadCmd &cmd, RenderState *state)
     RenderState_SetupCachedState(state, model);
     RENDER_STATE_DUMP_BEFORE(state);
     const int first = RenderDraw_StreamVertices(data, 4);
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, first, 4));
+    RenderBackend_Draw(RenderPrimitive::TriangleStrip, first, 4, state);
     RENDER_STATE_DUMP_AFTER(state);
     RenderDebug_CheckStateLeaks(state, "RenderDraw_DrawQuad");
     RenderState_ResetAllStates(state);
@@ -175,7 +177,7 @@ bool RenderDraw_DrawRotatedQuad(const DrawRotatedQuadCmd &cmd, RenderState *stat
     RenderState_SetupCachedState(state, model);
     RENDER_STATE_DUMP_BEFORE(state);
     const int first = RenderDraw_StreamVertices(data, 4);
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, first, 4));
+    RenderBackend_Draw(RenderPrimitive::TriangleStrip, first, 4, state);
     RENDER_STATE_DUMP_AFTER(state);
     RenderDebug_CheckStateLeaks(state, "RenderDraw_DrawRotatedQuad");
     RenderState_ResetAllStates(state);
@@ -186,8 +188,8 @@ bool RenderDraw_DrawCharacterSitting(const DrawCharacterSittingCmd &cmd, RenderS
 {
     ScopedPerfMarker(__FUNCTION__);
     static const auto s_sittingCharacterOffset = 8.f;
-    const auto x = (GLfloat)cmd.x;
-    const auto y = (GLfloat)cmd.y;
+    const auto x = (float)cmd.x;
+    const auto y = (float)cmd.y;
     const float width = (float)cmd.width;
     const float height = (float)cmd.height;
     const float h03 = height * cmd.h3mod;
@@ -279,7 +281,7 @@ bool RenderDraw_DrawCharacterSitting(const DrawCharacterSittingCmd &cmd, RenderS
         RenderState_SetupCachedState(state, model);
         RENDER_STATE_DUMP_BEFORE(state);
         const int first = RenderDraw_StreamVertices(vertices, vertexCount);
-        GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, first, vertexCount));
+        RenderBackend_Draw(RenderPrimitive::TriangleStrip, first, vertexCount, state);
         RENDER_STATE_DUMP_AFTER(state);
         RenderDebug_CheckStateLeaks(state, "RenderDraw_DrawCharacterSitting");
         RenderState_ResetAllStates(state);
@@ -360,7 +362,7 @@ bool RenderDraw_DrawLandTile(const DrawLandTileCmd &cmd, RenderState *state)
     RenderState_SetupCachedState(state, model);
     RENDER_STATE_DUMP_BEFORE(state);
     const int first = RenderDraw_StreamVertices(vertices, 4);
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, first, 4));
+    RenderBackend_Draw(RenderPrimitive::TriangleStrip, first, 4, state);
     RENDER_STATE_DUMP_AFTER(state);
     RenderDebug_CheckStateLeaks(state, "RenderDraw_DrawLandTile");
     RenderState_ResetAllStates(state);
@@ -372,8 +374,8 @@ bool RenderDraw_DrawShadow(const DrawShadowCmd &cmd, RenderState *state)
     ScopedPerfMarker(__FUNCTION__);
     const auto width = (float)cmd.width;
     const auto height = cmd.height / 2.0f;
-    const auto x = GLfloat(cmd.x);
-    const auto translateY = GLfloat(cmd.y + height * 0.75);
+    const auto x = float(cmd.x);
+    const auto translateY = float(cmd.y + height * 0.75);
     const float ratio = height / width;
     // Use actual color from state
     const uint32_t col =
@@ -411,7 +413,7 @@ bool RenderDraw_DrawShadow(const DrawShadowCmd &cmd, RenderState *state)
         BlendFactor::BlendFactor_Zero,
         BlendEquation::BlendEquation_Add);
     const int first = RenderDraw_StreamVertices(data, 4);
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, first, 4));
+    RenderBackend_Draw(RenderPrimitive::TriangleStrip, first, 4, state);
 
     if (cmd.keepBlend)
     {
@@ -437,9 +439,9 @@ bool RenderDraw_DrawCircle(const DrawCircleCmd &cmd, RenderState *state)
     ScopedPerfMarker(__FUNCTION__);
     const float pi = (float)XUO_M_PI * 2.0f;
     const auto radius = cmd.radius;
-    // Build circle vertices (triangle fan: center + perimeter)
-    const int segments = 361; // 0 to 360 degrees
-    GenericVertex vertices[segments + 1];
+    // A triangle list around the center (not a fan: Metal has no fan primitive)
+    const int segments = 360;
+    static GenericVertex vertices[segments * 3];
     // Use actual color from state instead of hardcoded white
     const uint32_t centerColor =
         (((uint32_t)(state->color[0] * 255) << 0) |
@@ -449,14 +451,15 @@ bool RenderDraw_DrawCircle(const DrawCircleCmd &cmd, RenderState *state)
     // Edge color: black if gradient mode is on, otherwise use state color
     const uint32_t edgeColor = cmd.gradientMode != 0 ? 0x00000000 : centerColor;
 
-    // Center vertex
-    vertices[0] = { { 0.0f, 0.0f }, { 0.5f, 0.5f }, centerColor, NORMAL_IDENTITY };
-
-    // Perimeter vertices
-    for (int i = 0; i <= 360; i++)
+    auto edge = [&](int i) -> GenericVertex {
+        const float a = (i / 180.0f) * pi;
+        return { { float(cos(a) * radius), float(sin(a) * radius) }, { 0.5f, 0.5f }, edgeColor, NORMAL_IDENTITY };
+    };
+    for (int i = 0; i < segments; i++)
     {
-        float a = (i / 180.0f) * pi;
-        vertices[i + 1] = { { float(cos(a) * radius), float(sin(a) * radius) }, { 0.5f, 0.5f }, edgeColor, NORMAL_IDENTITY };
+        vertices[i * 3 + 0] = { { 0.0f, 0.0f }, { 0.5f, 0.5f }, centerColor, NORMAL_IDENTITY };
+        vertices[i * 3 + 1] = edge(i);
+        vertices[i * 3 + 2] = edge(i + 1);
     }
 
     glm::mat4 model(1.0f);
@@ -466,8 +469,8 @@ bool RenderDraw_DrawCircle(const DrawCircleCmd &cmd, RenderState *state)
     RenderState_SetTexture(state, TextureType::TextureType_Texture2D, _defaultTex);
     RenderState_SetupCachedState(state, model);
     RENDER_STATE_DUMP_BEFORE(state);
-    const int first = RenderDraw_StreamVertices(vertices, (segments + 1));
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_FAN, first, segments + 1));
+    const int first = RenderDraw_StreamVertices(vertices, segments * 3);
+    RenderBackend_Draw(RenderPrimitive::Triangles, first, segments * 3, state);
     RENDER_STATE_DUMP_AFTER(state);
     RenderDebug_CheckStateLeaks(state, "RenderDraw_DrawCircle");
     RenderState_ResetAllStates(state);
@@ -499,7 +502,7 @@ bool RenderDraw_DrawUntexturedQuad(const DrawUntexturedQuadCmd &cmd, RenderState
     RenderState_SetupCachedState(state, model);
     RENDER_STATE_DUMP_BEFORE(state);
     const int first = RenderDraw_StreamVertices(data, 4);
-    GL_CHECK(glDrawArrays(GL_TRIANGLE_STRIP, first, 4));
+    RenderBackend_Draw(RenderPrimitive::TriangleStrip, first, 4, state);
     RENDER_STATE_DUMP_AFTER(state);
     RenderDebug_CheckStateLeaks(state, "RenderDraw_DrawUntexturedQuad");
     RenderState_ResetAllStates(state);
@@ -537,7 +540,7 @@ bool RenderDraw_DrawLine(const DrawLineCmd &cmd, RenderState *state)
     RenderState_SetupCachedState(state, model);
     RENDER_STATE_DUMP_BEFORE(state);
     const int first = RenderDraw_StreamVertices(data, 2);
-    GL_CHECK(glDrawArrays(GL_LINES, first, 2));
+    RenderBackend_Draw(RenderPrimitive::Lines, first, 2, state);
     RenderState_SetBlendEnabled(state, false);
     RENDER_STATE_DUMP_AFTER(state);
     RenderDebug_CheckStateLeaks(state, "RenderDraw_DrawLine");
@@ -657,19 +660,9 @@ bool RenderDraw_SetColorPalette(const SetColorPaletteCmd &cmd, RenderState *stat
     return RenderState_SetColorPalette(state, cmd.palette);
 }
 
-bool RenderDraw_ClearRT(const ClearRTCmd &cmd, RenderState *)
+bool RenderDraw_ClearRT(const ClearRTCmd &cmd, RenderState *state)
 {
-    auto mask = (cmd.clearMask & ClearRT::ClearRT_Color) == ClearRT::ClearRT_Color ?
-                    GL_COLOR_BUFFER_BIT :
-                    0;
-    mask |= (cmd.clearMask & ClearRT::ClearRT_Depth) == ClearRT::ClearRT_Depth ?
-                GL_DEPTH_BUFFER_BIT :
-                0;
-    mask |= (cmd.clearMask & ClearRT::ClearRT_Stencil) == ClearRT::ClearRT_Stencil ?
-                GL_STENCIL_BUFFER_BIT :
-                0;
-    glClear(mask);
-
+    RenderBackend_Clear(cmd.clearMask, state);
     return true;
 }
 
@@ -695,53 +688,27 @@ bool RenderDraw_DisableShaderPipeline(const DisableShaderPipelineCmd &cmd, Rende
 
 bool RenderDraw_GetFrameBufferPixels(const GetFrameBufferPixelsCmd &cmd, RenderState *state)
 {
-    const auto format = GL_UNSIGNED_BYTE;
-    const auto bpp = 4;
-    auto neededSize = (cmd.width * cmd.height) * bpp;
+    const auto neededSize = (cmd.width * cmd.height) * 4;
     assert(cmd.dataSize >= neededSize);
     if (cmd.dataSize < neededSize)
     {
         return false;
     }
-
-    // game viewport isn't scaled, if the OS window is smaller than GameWindowPosY + GameWindowHeight, bottom will
-    // be negative by this difference
-    int needed_height = cmd.y + cmd.height;
-    int bottom = cmd.window_height - needed_height;
-
-    // the buffer holds cmd.width x cmd.height logical pixels; at pixel ratio > 1 this reads the
-    // matching top-left device pixels (exact for 1x1 picking reads)
-    const float r = Render_PixelRatio(state);
-    glReadPixels(int(cmd.x * r), int(bottom * r), cmd.width, cmd.height, GL_RGBA, format, cmd.data);
-
-    return true;
+    return RenderBackend_ReadPixels(cmd, state);
 }
 
 bool RenderDraw_PushDebugMarker(const PushDebugMarkerCmd &cmd, RenderState *state)
 {
     (void)state;
-#if defined(NEW_RENDERER_ENABLED) && defined(USE_GL3)
-    if (glPushDebugGroup != nullptr) // KHR_debug (GL 4.3); absent on macOS
-    {
-        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, OGL_USERPERFMARKERS_ID, -1, cmd.label);
-    }
-#else
-    (void)cmd;
-#endif
+    RenderBackend_PushDebugGroup(cmd.label);
     return true;
 }
 
 bool RenderDraw_PopDebugMarker(const PopDebugMarkerCmd &cmd, RenderState *state)
 {
-    (void)state;
-#if defined(NEW_RENDERER_ENABLED) && defined(USE_GL3)
-    if (glPopDebugGroup != nullptr)
-    {
-        glPopDebugGroup();
-    }
-#else
     (void)cmd;
-#endif
+    (void)state;
+    RenderBackend_PopDebugGroup();
     return true;
 }
 

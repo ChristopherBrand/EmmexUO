@@ -11,7 +11,7 @@
 #include <external/gfx/gfx.h>
 #include <external/gfx/imgui/imgui.h>
 #include <external/gfx/imgui/imgui_impl_sdl.h>
-#include <external/gfx/imgui/imgui_impl_opengl3.h>
+#include "../Renderer/RenderAPI.h"
 #include <xuocore/enumlist.h>
 #include "OverlayPanels.h"
 #include "../Application.h"
@@ -110,8 +110,7 @@ static void rebuild_fonts_if_needed()
         io.Fonts->AddFontDefault(&cfg);
     }
     io.FontGlobalScale = 1.f / retina;
-    ImGui_ImplOpenGL3_DestroyFontsTexture();
-    ImGui_ImplOpenGL3_CreateFontsTexture();
+    Render_OverlayRebuildFonts();
     apply_style(float(scale));
 }
 
@@ -132,7 +131,7 @@ void Overlay_Init(SDL_Window *window, void *glContext)
     io.ConfigWindowsMoveFromTitleBarOnly = true;
 
     ImGui_ImplSDL2_InitForOpenGL(window, glContext);
-    ImGui_ImplOpenGL3_Init("#version " GL_SHADER_VERSION);
+    Render_OverlayInit();
     s_initialized = true;
     Overlay_LoadState();
 }
@@ -144,7 +143,7 @@ void Overlay_Shutdown()
         return;
     }
     Overlay_SaveState();
-    ImGui_ImplOpenGL3_Shutdown();
+    Render_OverlayShutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
     s_initialized = false;
@@ -251,7 +250,7 @@ void Overlay_Render()
         return;
     }
     rebuild_fonts_if_needed();
-    ImGui_ImplOpenGL3_NewFrame();
+    Render_OverlayNewFrame();
     ImGui_ImplSDL2_NewFrame(s_window);
     ImGui::NewFrame();
     // Software cursor over overlay windows; the game's own cursor is drawn underneath them.
@@ -276,7 +275,7 @@ void Overlay_Render()
     }
 
     ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    Render_OverlayDraw(ImGui::GetDrawData());
 }
 
 #endif

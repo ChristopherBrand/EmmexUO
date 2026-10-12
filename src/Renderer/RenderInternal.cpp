@@ -6,6 +6,8 @@
 #define RENDERER_INTERNAL
 #include "../Renderer/RenderInternal.h"
 #include "../Overlay/Overlay.h"
+#include <external/gfx/imgui/imgui.h>
+#include <external/gfx/imgui/imgui_impl_opengl3.h>
 #include "../Config.h"
 #include "../Wisp/WispWindow.h"
 #include "Debug/RenderDebug.h"
@@ -214,7 +216,7 @@ bool Render_Init(SDL_Window *window)
     GL_CHECK(glGetProgramiv(_pProg, GL_LINK_STATUS, &status));
     if (status == GL_FALSE)
     {
-        glGetProgramInfoLog(ps, sizeof(msg), nullptr, msg);
+        glGetProgramInfoLog(_pProg, sizeof(msg), nullptr, msg);
         Error(Renderer, "program link: %s", msg);
     }
 
@@ -932,6 +934,79 @@ int RenderDraw_StreamVertices(const GenericVertex *vertices, int count)
     const int first = int(s_streamOffset / sizeof(GenericVertex));
     s_streamOffset += bytes;
     return first;
+}
+
+bool Render_OverlayInit()
+{
+    return ImGui_ImplOpenGL3_Init("#version " GL_SHADER_VERSION);
+}
+
+void Render_OverlayShutdown()
+{
+    ImGui_ImplOpenGL3_Shutdown();
+}
+
+void Render_OverlayRebuildFonts()
+{
+    ImGui_ImplOpenGL3_DestroyFontsTexture();
+    ImGui_ImplOpenGL3_CreateFontsTexture();
+}
+
+void Render_OverlayNewFrame()
+{
+    ImGui_ImplOpenGL3_NewFrame();
+}
+
+void Render_OverlayDraw(ImDrawData *drawData)
+{
+    ImGui_ImplOpenGL3_RenderDrawData(drawData);
+}
+
+void RenderBackend_Draw(RenderPrimitive primitive, int first, int count, RenderState *state)
+{
+    (void)state;
+    static const GLenum s_modes[] = { GL_TRIANGLE_STRIP, GL_TRIANGLES, GL_LINES };
+    GL_CHECK(glDrawArrays(s_modes[int(primitive)], first, count));
+}
+
+void RenderBackend_Clear(uint8_t clearMask, RenderState *state)
+{
+    (void)state;
+    GLbitfield mask = 0;
+    mask |= (clearMask & ClearRT::ClearRT_Color) ? GL_COLOR_BUFFER_BIT : 0;
+    mask |= (clearMask & ClearRT::ClearRT_Depth) ? GL_DEPTH_BUFFER_BIT : 0;
+    mask |= (clearMask & ClearRT::ClearRT_Stencil) ? GL_STENCIL_BUFFER_BIT : 0;
+    glClear(mask);
+}
+
+bool RenderBackend_ReadPixels(const GetFrameBufferPixelsCmd &cmd, RenderState *state)
+{
+    // game viewport isn't scaled, if the OS window is smaller than GameWindowPosY + GameWindowHeight,
+    // bottom will be negative by this difference
+    const int needed_height = cmd.y + cmd.height;
+    const int bottom = cmd.window_height - needed_height;
+    // the buffer holds cmd.width x cmd.height logical pixels; at pixel ratio > 1 this reads the
+    // matching bottom-left device pixels
+    const float r = Render_PixelRatio(state);
+    glReadPixels(
+        int(cmd.x * r), int(bottom * r), cmd.width, cmd.height, GL_RGBA, GL_UNSIGNED_BYTE, cmd.data);
+    return true;
+}
+
+void RenderBackend_PushDebugGroup(const char *label)
+{
+    if (glPushDebugGroup != nullptr) // KHR_debug (GL 4.3); absent on macOS
+    {
+        glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, OGL_USERPERFMARKERS_ID, -1, label);
+    }
+}
+
+void RenderBackend_PopDebugGroup()
+{
+    if (glPopDebugGroup != nullptr)
+    {
+        glPopDebugGroup();
+    }
 }
 
 #endif // #if defined(NEW_RENDERER_ENABLED) && (defined(USE_GL3) || defined(USE_GLES))

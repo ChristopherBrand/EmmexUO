@@ -39,6 +39,14 @@ void Render_SwapBuffers();
 // Linear (smooth) instead of nearest sampling for every texture, for fractional UI scales.
 void Render_SetSmoothScaling(bool smooth);
 
+// Renderer side of the ImGui overlay (OpenGL3 or Metal ImGui back-end)
+struct ImDrawData;
+bool Render_OverlayInit();
+void Render_OverlayShutdown();
+void Render_OverlayRebuildFonts();
+void Render_OverlayNewFrame();
+void Render_OverlayDraw(ImDrawData *drawData);
+
 RenderState Render_DefaultState();
 void Render_ResetCmdList(RenderCmdList *cmdList, RenderState state);
 

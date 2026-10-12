@@ -27,6 +27,7 @@ option(ENABLE_FORMAT "Enables clang-format (default: On)" ON)
 option(RENDER_GLES2 "Force OpenGL ES2 (default Off)" OFF)
 option(RENDER_GL3 "Force OpenGL 3.x (default Off)" OFF)
 option(RENDER_GL1 "Force OpenGL 1.1 (automatic)" OFF)
+option(RENDER_METAL "macOS: draw the client with Metal instead of OpenGL (default On)" ON)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/CMake)
 

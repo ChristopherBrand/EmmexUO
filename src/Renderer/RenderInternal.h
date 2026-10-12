@@ -36,6 +36,19 @@ uint32_t Render_DefaultFramebuffer();
 // Appends vertices to the streaming VBO (g_drawVBO) and returns the index of the first one,
 // for glDrawArrays(mode, first, count). Never overwrites data the GPU may still be reading.
 int RenderDraw_StreamVertices(const GenericVertex *vertices, int count);
+
+// GPU backend hooks used by the backend-neutral RenderDraw.cpp
+enum class RenderPrimitive : uint8_t
+{
+    TriangleStrip,
+    Triangles,
+    Lines,
+};
+void RenderBackend_Draw(RenderPrimitive primitive, int first, int count, RenderState *state);
+void RenderBackend_Clear(uint8_t clearMask, RenderState *state);
+bool RenderBackend_ReadPixels(const GetFrameBufferPixelsCmd &cmd, RenderState *state);
+void RenderBackend_PushDebugGroup(const char *label);
+void RenderBackend_PopDebugGroup();
 extern uint32_t _vibuffers[2];
 extern int _uAlphaTestEnabled;
 extern int _uAlphaRef;

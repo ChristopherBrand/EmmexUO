@@ -312,6 +312,25 @@ else()
   add_library(crossuo SHARED ${XUO_FILES})
 endif()
 
+# macOS Metal renderer: replaces the OpenGL backend files in the client only. The shared
+# headers keep their GL3 configuration (the launcher still uses OpenGL through them).
+if(APPLE AND RENDER_METAL AND USE_GL3)
+  enable_language(OBJCXX)
+  get_target_property(_xuo_sources crossuo SOURCES)
+  list(REMOVE_ITEM _xuo_sources Renderer/RenderInternal.cpp Renderer/RenderState.cpp)
+  set_property(TARGET crossuo PROPERTY SOURCES ${_xuo_sources})
+  target_sources(crossuo PRIVATE
+    Renderer/RenderMetal.mm
+    ${CMAKE_SOURCE_DIR}/external/gfx/imgui/imgui_impl_metal.mm)
+  set_source_files_properties(
+    Renderer/RenderMetal.mm
+    ${CMAKE_SOURCE_DIR}/external/gfx/imgui/imgui_impl_metal.mm
+    PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+  target_compile_definitions(crossuo PRIVATE XUO_METAL=1)
+  target_link_libraries(crossuo PUBLIC "-framework Metal" "-framework QuartzCore" "-framework AppKit")
+  message(STATUS "Client renderer: Metal")
+endif()
+
 add_dependencies(crossuo ${EXTERNAL_PROJECT} ${EXTERNALGFX_PROJECT} ${XUOCORE_PROJECT} ${COMMON_PROJECT} ${3RDPARTY_STATIC})
 target_link_libraries(crossuo PUBLIC ${EXTERNAL_PROJECT} ${EXTERNALGFX_PROJECT} ${XUOCORE_PROJECT} ${COMMON_PROJECT} ${SDL2_LIBRARIES} ${GL_LIBRARIES} ${GLM_LIBRARIES} ${THREAD})
 target_include_directories(crossuo PUBLIC ${COMMON_INCLUDE} ${EXTERNALGFX_INCLUDE} ${GLM_INCLUDE_DIR})
