@@ -37,6 +37,8 @@ enum
     ID_CCS_COLOR_RANGE = 100,
 };
 
+static bool s_NameMissing = false; // Next was pressed without a usable name
+
 CGumpScreenCreateCharacter::CGumpScreenCreateCharacter()
     : CGump(GT_NONE, 0, 0, 0)
 {
@@ -69,6 +71,18 @@ void CGumpScreenCreateCharacter::UpdateContent()
     entry->CheckOnSerial = true;
     g_EntryPointer = &entry->m_Entry;
     g_EntryPointer->SetTextA(g_CreateCharacterScreen.Name);
+
+    if (s_NameMissing && g_CreateCharacterScreen.Name.length() < 2)
+    {
+        // stay here and point at the field rather than bouncing to the login screen
+        CGUIText *hint = (CGUIText *)Add(new CGUIText(0x0021, 0, 91));
+        hint->CreateTextureA(9, "Enter a name (2+ letters) to continue");
+        hint->SetX(355 - hint->m_Texture.Width / 2); // centered under the name field
+    }
+    else
+    {
+        s_NameMissing = false;
+    }
 
     Add(new CGUIGumppic(0x0708, 238, 98));
     Add(new CGUIResizepic(0, 0x0E10, 475, 125, 151, 310));
@@ -535,10 +549,10 @@ void CGumpScreenCreateCharacter::GUMP_BUTTON_EVENT_C
     }
     else if (serial == ID_CCS_ARROW_NEXT) //> button
     {
-        if (g_EntryPointer->Length() < 2)
+        if (g_EntryPointer == nullptr || g_EntryPointer->Length() < 2)
         {
-            g_CreateCharacterScreen.CreateSmoothAction(
-                CCreateCharacterScreen::ID_SMOOTH_CCS_GO_SCREEN_CONNECT);
+            s_NameMissing = true;
+            WantUpdateContent = true;
         }
         else
         {
