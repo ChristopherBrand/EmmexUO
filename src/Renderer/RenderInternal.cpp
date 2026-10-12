@@ -5,6 +5,7 @@
 #if defined(NEW_RENDERER_ENABLED) && (defined(USE_GL3) || defined(USE_GLES))
 #define RENDERER_INTERNAL
 #include "../Renderer/RenderInternal.h"
+#include "../Overlay/Overlay.h"
 #include "../Wisp/WispWindow.h"
 #include "Debug/RenderDebug.h"
 #include "../Utility/PerfMarker.h"
@@ -298,12 +299,14 @@ bool Render_Init(SDL_Window *window)
     Render_InitVertexBuffers();
     g_render.context = context;
     g_render.window = window;
+    Overlay_Init(window, context);
     return true;
 }
 
 void Render_Shutdown()
 {
     g_render.shutdown = true;
+    Overlay_Shutdown();
     Render_CleanupVertexBuffers();
     if (g_render.context != nullptr)
     {
@@ -347,6 +350,7 @@ bool HACKRender_GetFrameBuffer(RenderCmdList *cmdList, frame_buffer_t *currFb)
 
 void Render_SwapBuffers()
 {
+    Overlay_Render();
     SDL_GL_SwapWindow(g_render.window);
 }
 

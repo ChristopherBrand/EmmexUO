@@ -48,6 +48,8 @@ set(renderer_src
   Renderer/RenderGlobals.cpp
   Renderer/RenderState.cpp
   Renderer/RenderInternal.cpp
+  Overlay/Overlay.cpp
+  Overlay/OverlayPanels.cpp
   Renderer/RenderTypes.cpp
 )
 

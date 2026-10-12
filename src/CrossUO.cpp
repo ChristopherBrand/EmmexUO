@@ -24,6 +24,7 @@
 #include "SelectedObject.h"
 #include "ClickObject.h"
 #include "GameWindow.h"
+#include "Overlay/Overlay.h"
 #include "UseItemsList.h"
 #include "ContainerStack.h"
 #include "Container.h"
@@ -5337,6 +5338,8 @@ void CGame::AddJournalMessage(CTextData *msg, const astr_t &name)
 		jmsg->GenerateTexture(214, UOFONT_INDENTION);*/
 
     g_Journal.Add(jmsg);
+    Overlay_JournalAdd(
+        jmsg->Type, jmsg->Color, jmsg->Unicode ? wstr_to_utf8(jmsg->UnicodeText) : jmsg->Text);
 }
 
 void CGame::ChangeMap(uint8_t newmap)

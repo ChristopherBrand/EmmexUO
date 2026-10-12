@@ -10,6 +10,7 @@
 #include "../GameWindow.h"
 #include "../Globals.h" // g_Ticks, CPU_USAGE_DELAY
 #include "revision.h"
+#include "../Overlay/Overlay.h"
 
 namespace Wisp
 {
@@ -41,6 +42,10 @@ int CApplication::Run()
         SDL_Event event;
         while (SDL_PollEvent(&event) != 0)
         {
+            if (Overlay_ProcessEvent(event))
+            {
+                continue; // used by an overlay window
+            }
             quit = Wisp::g_WispWindow->OnWindowProc(event);
             if (quit)
             {
