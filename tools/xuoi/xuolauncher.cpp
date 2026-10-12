@@ -316,7 +316,11 @@ int main(int argc, char **argv)
     s_launcher_binary = fs_path_from(bin);
     s_launcher_timestamp = fs_timestamp_write(s_launcher_binary);
 
-#if !defined(XUO_DEBUG)
+#if defined(__APPLE__)
+    // A signed .app bundle must not rewrite its own Contents/MacOS (breaks the signature and
+    // fails under Gatekeeper's read-only translocation); bundles are updated as a whole instead.
+    const bool self_relaunch = strstr(bin, ".app/Contents/MacOS/") == nullptr;
+#elif !defined(XUO_DEBUG)
     const bool self_relaunch = true;
 #else
     const bool self_relaunch = argc > 1 && strcmp(argv[1], "--self") == 0;
