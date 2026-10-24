@@ -317,6 +317,14 @@ void Overlay_Render()
     if (s_loginWasActive && !loginActive)
     {
         Overlay_LoginHidden();
+        // back to the game's own cursor: hide the system one again
+        ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+        SDL_ShowCursor(SDL_DISABLE);
+    }
+    if (loginActive)
+    {
+        // the login screen uses the native pointer (arrow, I-beam, hand) instead of drawing one
+        ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
     }
     s_loginWasActive = loginActive;
 
@@ -328,8 +336,9 @@ void Overlay_Render()
     Render_OverlayNewFrame();
     ImGui_ImplSDL2_NewFrame(s_window);
     ImGui::NewFrame();
-    // Software cursor over overlay windows; the game's own cursor is drawn underneath them.
-    ImGui::GetIO().MouseDrawCursor = loginActive || ImGui::GetIO().WantCaptureMouse;
+    // In game, a software cursor over overlay windows (the game draws its own underneath);
+    // the login screen uses the native pointer instead.
+    ImGui::GetIO().MouseDrawCursor = !loginActive && ImGui::GetIO().WantCaptureMouse;
 
     const float scale = float(s_fontScale);
     if (loginActive)
