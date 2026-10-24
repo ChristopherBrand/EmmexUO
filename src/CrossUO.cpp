@@ -1728,6 +1728,7 @@ void CGame::LoginComplete(bool reload)
 
     if (load && g_Player != nullptr)
     {
+        g_ReconnectLogin = false;
         Roster_BeginSession();
         astr_t title = astr_t(CLIENT_TITLE " \xE2\x80\x94 ") + g_Player->GetName();
         CServer *server = g_ServerList.GetSelectedServer();
@@ -6035,7 +6036,7 @@ void CGame::StartReconnect()
     if (!g_ConnectionManager.Connected() || g_World == nullptr)
     {
         LogOut();
-        g_MainScreen.m_AutoLogin->Checked = true;
+        g_ReconnectLogin = true;
         InitScreen(GS_MAIN);
         g_GameWindow.CreateTimer(FASTLOGIN_TIMER_ID, 50);
     }

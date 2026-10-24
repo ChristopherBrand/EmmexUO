@@ -128,6 +128,9 @@ extern bool g_SendLogoutNotification;
 extern bool g_PopupEnabled;
 extern bool g_ChatEnabled;
 extern bool g_Pal_Necro_Creation;
+// Set while reconnecting after a dropped connection: pick the last shard and character
+// automatically for this one login, without changing the player's Auto login setting.
+extern bool g_ReconnectLogin;
 extern bool g_TooltipsEnabled;
 extern bool g_PaperdollBooks;
 

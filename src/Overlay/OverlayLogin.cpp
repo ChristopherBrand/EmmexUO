@@ -191,6 +191,14 @@ static void sync_from_model()
 
 
 
+// The login options are preferences: keep them as soon as they change.
+static void save_login_options()
+{
+    g_MainScreen.Save();
+    SaveGlobalConfig();
+    LoginServers_Save();
+}
+
 static bool busy()
 {
     return g_MainScreen.SmoothScreenAction != 0 || g_ScreenEffectManager.Mode != SEM_NONE;
@@ -207,6 +215,7 @@ static void login()
         Overlay_Later(LoginServers_Restart);
         return;
     }
+    g_ReconnectLogin = false; // a login the player started follows their own settings
     LoginServers_Save(); // remembers this server's account
     Overlay_Later([] { g_MainScreen.CreateSmoothAction(CMainScreen::ID_SMOOTH_MS_CONNECT); });
 }
@@ -441,7 +450,10 @@ static void draw_card(const ImVec2 &display, float x0, float contentW, float u)
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(3.f * u, 3.f * u));
     if (g_MainScreen.m_SavePassword != nullptr)
     {
-        ImGui::Checkbox("Save password", &g_MainScreen.m_SavePassword->Checked);
+        if (ImGui::Checkbox("Save password", &g_MainScreen.m_SavePassword->Checked))
+        {
+            save_login_options();
+        }
         if (ImGui::IsItemHovered())
         {
             ImGui::SetTooltip("Save your password in the config file");
@@ -450,7 +462,10 @@ static void draw_card(const ImVec2 &display, float x0, float contentW, float u)
     if (g_MainScreen.m_AutoLogin != nullptr)
     {
         ImGui::SameLine(width - pad * 2 - ImGui::CalcTextSize("Auto login").x - 26.f * u);
-        ImGui::Checkbox("Auto login", &g_MainScreen.m_AutoLogin->Checked);
+        if (ImGui::Checkbox("Auto login", &g_MainScreen.m_AutoLogin->Checked))
+        {
+            save_login_options();
+        }
         if (ImGui::IsItemHovered())
         {
             ImGui::SetTooltip("Log in automatically, skipping the selection screens");

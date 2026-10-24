@@ -91,6 +91,7 @@ bool g_SendLogoutNotification = false;
 bool g_PopupEnabled = false;
 bool g_ChatEnabled = false;
 bool g_Pal_Necro_Creation = false;
+bool g_ReconnectLogin = false;
 bool g_TooltipsEnabled = false;
 bool g_PaperdollBooks = false;
 

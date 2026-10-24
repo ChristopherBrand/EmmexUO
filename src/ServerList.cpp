@@ -89,7 +89,7 @@ void CServerList::ParsePacket(CDataReader &reader)
 #endif // USE_PING
     }
 
-    if (g_ServerList.LastServerIndex < numServers && g_MainScreen.m_AutoLogin->Checked)
+    if (g_ServerList.LastServerIndex < numServers && (g_MainScreen.m_AutoLogin->Checked || g_ReconnectLogin))
     {
         g_Game.ServerSelection(g_ServerList.LastServerIndex);
     }
