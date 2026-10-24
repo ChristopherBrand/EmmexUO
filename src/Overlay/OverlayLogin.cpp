@@ -174,7 +174,8 @@ static void draw_backdrop(ImDrawList *dl, const ImVec2 &size)
         const float offset = fmodf(t * w / 360.f, w);
         for (float x = -offset; x < size.x; x += w)
         {
-            dl->AddImage(s_clouds.texture, ImVec2(floorf(x), 0), ImVec2(floorf(x) + w + 1, h));
+            // sub-pixel positions: rounding to whole points makes slow motion step
+            dl->AddImage(s_clouds.texture, ImVec2(x, 0), ImVec2(x + w + 1, h));
         }
     }
 

@@ -937,6 +937,14 @@ void Render_OverlayDraw(ImDrawData *drawData)
     [enc endEncoding];
 }
 
+void Render_SetVSync(bool enabled)
+{
+    if (m.layer != nil)
+    {
+        m.layer.displaySyncEnabled = enabled;
+    }
+}
+
 void *Render_OverlayCreateImage(int width, int height, const uint8_t *rgba)
 {
     MTLTextureDescriptor *desc =

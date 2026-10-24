@@ -962,6 +962,11 @@ void Render_OverlayDraw(ImDrawData *drawData)
     ImGui_ImplOpenGL3_RenderDrawData(drawData);
 }
 
+void Render_SetVSync(bool enabled)
+{
+    SDL_GL_SetSwapInterval(enabled ? 1 : 0);
+}
+
 void *Render_OverlayCreateImage(int width, int height, const uint8_t *rgba)
 {
     GLuint tex = 0;

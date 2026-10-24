@@ -317,9 +317,15 @@ void Overlay_Render()
     if (s_loginWasActive && !loginActive)
     {
         Overlay_LoginHidden();
+        Render_SetVSync(false);
         // back to the game's own cursor: hide the system one again
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
         SDL_ShowCursor(SDL_DISABLE);
+    }
+    if (loginActive && !s_loginWasActive)
+    {
+        // the drifting backdrop needs frames in step with the display
+        Render_SetVSync(true);
     }
     if (loginActive)
     {

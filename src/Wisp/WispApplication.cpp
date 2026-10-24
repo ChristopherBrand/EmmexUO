@@ -59,6 +59,10 @@ int CApplication::Run()
         // 3] Calculate proper delay based on settings and frame time.
         int32_t iDynamicFPS = SDL_GetTicks() - g_Ticks;
         int32_t iDelay = g_GameWindow.GetRenderDelay();
+        if (Overlay_LoginActive())
+        {
+            iDelay = 0; // vsync paces the login screen (see Overlay_Render)
+        }
 
         SDL_Delay(std::max(iDelay - iDynamicFPS, CPU_USAGE_DELAY));
     }
