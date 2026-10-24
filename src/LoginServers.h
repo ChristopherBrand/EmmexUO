@@ -58,6 +58,8 @@ int LoginServers_Add();
 void LoginServers_Remove(int index);
 
 ServerStatus LoginServers_Status(const LoginServer &server);
+// Time to open a connection to the login server, from the last check; -1 if unknown.
+int LoginServers_LatencyMs(const LoginServer &server);
 // Ask the status checker to look again soon (after an address edit).
 void LoginServers_Recheck();
 

@@ -7,6 +7,7 @@
 #include "../ServerList.h"
 #include "../GameWindow.h"
 #include "../Managers/ScreenEffectManager.h"
+#include "revision.h"
 
 CServerScreen g_ServerScreen;
 
@@ -23,7 +24,7 @@ void CServerScreen::Init()
 {
     CBaseScreen::Init();
 
-    g_GameWindow.SetTitle(astr_t("Ultima Online - ") + g_MainScreen.m_Account->GetTextA());
+    g_GameWindow.SetTitle(astr_t(CLIENT_TITLE " \xE2\x80\x94 ") + g_MainScreen.m_Account->GetTextA());
     g_ScreenEffectManager.UseSunrise();
     SmoothScreenAction = 0;
 

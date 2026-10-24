@@ -628,9 +628,9 @@ void CGame::InitScreen(GAME_STATE state)
     {
         CMainScreen::UseModernWindow(); // character creation is an overlay screen
     }
-    else if (state >= GS_SERVER && state <= GS_GAME_CONNECT)
+    else if (state >= GS_CHARACTER && state <= GS_GAME_CONNECT)
     {
-        // past the login screen (and its connecting state), the screens are classic gumps
+        // from the character list on (until the game), the screens are classic gumps
         CMainScreen::UseClassicWindow();
     }
     g_SelectedObject.Clear();

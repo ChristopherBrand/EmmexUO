@@ -44,11 +44,12 @@ bool Overlay_LoginActive()
     {
         return false;
     }
-    // connecting to the login server (and "connection lost") show in the login card too
-    const bool connecting = g_GameState == GS_MAIN_CONNECT &&
-                            (g_ConnectionScreen.GetType() == CST_LOGIN ||
-                             g_ConnectionScreen.GetType() == CST_CONLOST);
-    return g_GameState == GS_MAIN || connecting;
+    // connecting to the login server (and "connection lost"), choosing a shard and connecting
+    // to it all show on the login screen too
+    const bool loginType = g_ConnectionScreen.GetType() == CST_LOGIN ||
+                           g_ConnectionScreen.GetType() == CST_CONLOST;
+    return g_GameState == GS_MAIN || g_GameState == GS_SERVER ||
+           ((g_GameState == GS_MAIN_CONNECT || g_GameState == GS_SERVER_CONNECT) && loginType);
 }
 
 // Character creation (profession, appearance and starting city) as one overlay screen.

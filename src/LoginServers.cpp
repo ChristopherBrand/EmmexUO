@@ -3,6 +3,7 @@
 #include "LoginServers.h"
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <map>
 #include <mutex>
@@ -41,6 +42,7 @@ static bool s_stop = false;
 static bool s_recheck = false;
 static std::vector<std::pair<std::string, int>> s_targets;
 static std::map<std::string, ServerStatus> s_status;
+static std::map<std::string, int> s_latency; // connect round trip, ms
 
 static std::string endpoint(const std::string &host, int port)
 {
@@ -90,8 +92,9 @@ static fs_path servers_file()
 // --------------------------------------------------------------------------------------
 // status checker
 
-static ServerStatus probe(const std::string &host, int port)
+static ServerStatus probe(const std::string &host, int port, int &latencyMs)
 {
+    latencyMs = -1;
     if (host.empty())
     {
         return ServerStatus::Unknown;
@@ -107,6 +110,7 @@ static ServerStatus probe(const std::string &host, int port)
     bool online = false;
     for (auto ai = res; ai != nullptr && !online; ai = ai->ai_next)
     {
+        const auto started = std::chrono::steady_clock::now();
 #if defined(_WIN32)
         SOCKET fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
         if (fd == INVALID_SOCKET)
@@ -134,6 +138,12 @@ static ServerStatus probe(const std::string &host, int port)
             socklen_t len = sizeof(error);
             getsockopt(fd, SOL_SOCKET, SO_ERROR, (char *)&error, &len);
             online = error == 0;
+            if (online)
+            {
+                latencyMs = int(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - started)
+                                    .count());
+            }
         }
 #if defined(_WIN32)
         closesocket(fd);
@@ -159,9 +169,11 @@ static void checker_main()
         lock.unlock();
         for (const auto &t : targets)
         {
-            const auto status = probe(t.first, t.second);
+            int latency = -1;
+            const auto status = probe(t.first, t.second, latency);
             std::lock_guard<std::mutex> guard(s_mutex);
             s_status[endpoint(t.first, t.second)] = status;
+            s_latency[endpoint(t.first, t.second)] = latency;
         }
         lock.lock();
         s_wake.wait_for(lock, std::chrono::seconds(30), [] { return s_stop || s_recheck; });
@@ -193,6 +205,13 @@ void LoginServers_Recheck()
         s_recheck = true;
     }
     s_wake.notify_all();
+}
+
+int LoginServers_LatencyMs(const LoginServer &server)
+{
+    std::lock_guard<std::mutex> guard(s_mutex);
+    const auto it = s_latency.find(endpoint(server.Host, server.Port));
+    return it != s_latency.end() ? it->second : -1;
 }
 
 ServerStatus LoginServers_Status(const LoginServer &server)

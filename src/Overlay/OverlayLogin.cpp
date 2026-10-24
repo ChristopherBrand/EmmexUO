@@ -21,6 +21,8 @@
 #include "../Application.h"
 #include "../Config.h"
 #include "../LoginServers.h"
+#include "../ServerList.h"
+#include "../ScreenStages/ServerScreen.h"
 #include "../Platform.h"
 #include "../GUI/GUICheckbox.h"
 #include "../Managers/FontsManager.h"
@@ -227,12 +229,13 @@ static void draw_status(const ImVec2 &pos, float width, float height, float pad,
     const bool waiting = !lost && !failed;
     const float innerW = width - pad * 2;
 
-    // which server, at the top
+    // which server (or shard), at the top
     const auto &servers = LoginServers_List();
     const int active = LoginServers_Active();
-    if (active >= 0 && active < int(servers.size()))
+    CServer *shard = g_GameState == GS_SERVER_CONNECT ? g_ServerList.GetSelectedServer() : nullptr;
+    if (shard != nullptr || (active >= 0 && active < int(servers.size())))
     {
-        std::string label = LoginServers_DisplayName(servers[active]);
+        std::string label = shard != nullptr ? shard->Name : LoginServers_DisplayName(servers[active]);
         std::transform(label.begin(), label.end(), label.begin(), ::toupper);
         Overlay_TextWrappedCentered(dl, small, pos.x + pad, innerW, pos.y + pad, COL_MUTED, label.c_str());
     }
@@ -324,7 +327,7 @@ static void draw_card(const ImVec2 &display, float x0, float contentW, float u)
         IM_COL32(255, 255, 255, 0));
     dl->AddRect(pos, end, IM_COL32(255, 255, 255, 38), r, ImDrawCornerFlags_All, 1.f);
 
-    if (g_GameState == GS_MAIN_CONNECT)
+    if (g_GameState == GS_MAIN_CONNECT || g_GameState == GS_SERVER_CONNECT)
     {
         draw_status(pos, width, height, pad, u);
         return;
@@ -965,6 +968,276 @@ static void draw_server_panel(const ImVec2 &display, float panelW, float ease, f
     ImGui::End();
 }
 
+// ---------------------------------------------------------------------------------------
+// Shard choice: after signing in, one glass card per shard in place of the login card.
+
+enum class ShardSort
+{
+    Recommended,
+    Name,
+    Fullness,
+};
+static ShardSort s_shardSort = ShardSort::Recommended;
+static int s_shardSelected = -1; // position in g_ServerList
+static double s_shardLastClick = 0;
+static int s_shardLastClickIndex = -1;
+
+static const char *fullness_word(int percent)
+{
+    if (percent >= 95)
+        return "Full";
+    if (percent >= 70)
+        return "Busy";
+    if (percent >= 35)
+        return "Moderate";
+    return "Quiet";
+}
+
+static int login_latency()
+{
+    const auto &servers = LoginServers_List();
+    const int active = LoginServers_Active();
+    return active >= 0 && active < int(servers.size()) ? LoginServers_LatencyMs(servers[active]) : -1;
+}
+
+// Signal bars: four bars, more of them lit the quicker the connection.
+static void signal_bars(ImDrawList *dl, const ImVec2 &p, float h, int ms, float u)
+{
+    const int lit = ms < 0 ? 0 : ms < 60 ? 4 : ms < 120 ? 3 : ms < 220 ? 2 : 1;
+    const float bw = 3.f * u;
+    for (int i = 0; i < 4; i++)
+    {
+        const float bh = h * (0.35f + 0.65f * (i + 1) / 4.f);
+        const ImVec2 a(p.x + i * (bw + 2.f * u), p.y + h - bh);
+        dl->AddRectFilled(a, ImVec2(a.x + bw, p.y + h), i < lit ? COL_GOLD : IM_COL32(255, 255, 255, 40), 1.f);
+    }
+}
+
+static void enter_shard(int position)
+{
+    if (busy())
+    {
+        return;
+    }
+    Overlay_Later([position] {
+        g_ServerScreen.SelectionServerTempValue = position;
+        g_ServerScreen.CreateSmoothAction(CServerScreen::ID_SMOOTH_SS_SELECT_SERVER);
+    });
+}
+
+static void draw_shards(const ImVec2 &display, float u)
+{
+    ImFont *title = Overlay_LoginFont(LoginFont::Title);
+    ImFont *body = Overlay_LoginFont(LoginFont::Body);
+    ImFont *small = Overlay_LoginFont(LoginFont::Small);
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+    const int count = g_ServerList.ServersCount();
+    if (s_shardSelected < 0 || s_shardSelected >= count)
+    {
+        s_shardSelected = std::max(0, std::min<int>(int(g_ServerList.LastServerIndex), count - 1));
+    }
+
+    // order: last played first, then the least full (or by name / fullness)
+    std::vector<int> order(count);
+    for (int i = 0; i < count; i++)
+    {
+        order[i] = i;
+    }
+    std::stable_sort(order.begin(), order.end(), [](int a, int b) {
+        CServer *sa = g_ServerList.GetServer(a);
+        CServer *sb = g_ServerList.GetServer(b);
+        switch (s_shardSort)
+        {
+            case ShardSort::Name:
+                return sa->Name < sb->Name;
+            case ShardSort::Fullness:
+                return sa->FullPercent < sb->FullPercent;
+            default:
+                if ((a == int(g_ServerList.LastServerIndex)) != (b == int(g_ServerList.LastServerIndex)))
+                {
+                    return a == int(g_ServerList.LastServerIndex);
+                }
+                return sa->FullPercent < sb->FullPercent;
+        }
+    });
+
+    // heading, under the title
+    const float top = std::max(display.y * 0.42f, 190.f * u);
+    const char *heading = "Choose your shard";
+    const float hs = Overlay_px(title) * 0.5f;
+    const float hw = title->CalcTextSizeA(hs, FLT_MAX, 0.f, heading).x;
+    dl->AddText(title, hs, ImVec2(floorf((display.x - hw) / 2), top), COL_TEXT, heading);
+    const std::string who = "Signed in as " + g_MainScreen.m_Account->GetTextA();
+    Overlay_TextCentered(dl, small, top + hs + 8.f * u, 0, display.x, COL_MUTED, who.c_str());
+
+    // sort chips
+    static const char *sorts[3] = { "Recommended", "Name", "Fullness" };
+    float chipsW = 0;
+    for (auto label : sorts)
+    {
+        chipsW += small->CalcTextSizeA(Overlay_px(small), FLT_MAX, 0.f, label).x + 28.f * u;
+    }
+    chipsW += 16.f * u;
+    float cx = floorf((display.x - chipsW) / 2);
+    const float chipsY = top + hs + Overlay_px(small) + 22.f * u;
+    const float chipH = Overlay_px(small) + 12.f * u;
+    for (int i = 0; i < 3; i++)
+    {
+        const float w = small->CalcTextSizeA(Overlay_px(small), FLT_MAX, 0.f, sorts[i]).x + 20.f * u;
+        ImGui::SetCursorScreenPos(ImVec2(cx, chipsY));
+        ImGui::PushID(500 + i);
+        if (ImGui::InvisibleButton("##sort", ImVec2(w, chipH)))
+        {
+            s_shardSort = ShardSort(i);
+        }
+        const bool hov = ImGui::IsItemHovered();
+        ImGui::PopID();
+        const bool on = int(s_shardSort) == i;
+        dl->AddRectFilled(ImVec2(cx, chipsY), ImVec2(cx + w, chipsY + chipH),
+                          on ? IM_COL32(214, 176, 104, 60) : (hov ? IM_COL32(255, 255, 255, 24) : IM_COL32(0, 0, 0, 80)), chipH / 2);
+        dl->AddRect(ImVec2(cx, chipsY), ImVec2(cx + w, chipsY + chipH), on ? IM_COL32(214, 176, 104, 160) : IM_COL32(255, 255, 255, 30), chipH / 2);
+        dl->AddText(small, Overlay_px(small), ImVec2(cx + 10.f * u, chipsY + 6.f * u), on ? COL_GOLD : COL_TEXT, sorts[i]);
+        cx += w + 8.f * u;
+    }
+
+    // the cards, centred, wrapping into rows
+    const float cardW = 250.f * u;
+    const float cardH = 150.f * u;
+    const float gap = 16.f * u;
+    const float footerH = Overlay_px(body) + 22.f * u;
+    const float areaTop = chipsY + chipH + 22.f * u;
+    const float areaBottom = display.y - 90.f * u - footerH;
+    const int perRow = std::max(1, std::min(count, int((display.x - 80.f * u + gap) / (cardW + gap))));
+    const float rowW = perRow * cardW + (perRow - 1) * gap;
+    const float areaX = floorf((display.x - rowW) / 2);
+    ImGui::SetCursorScreenPos(ImVec2(areaX, areaTop));
+    ImGui::BeginChild("##shards", ImVec2(rowW + 14.f * u, std::max(cardH + 8.f * u, areaBottom - areaTop)), false);
+    const int latency = login_latency();
+    for (int k = 0; k < count; k++)
+    {
+        const int i = order[k];
+        CServer *shard = g_ServerList.GetServer(i);
+        if (shard == nullptr)
+        {
+            continue;
+        }
+        if (k % perRow != 0)
+        {
+            ImGui::SameLine(0, gap);
+        }
+        ImGui::PushID(i);
+        const ImVec2 p = ImGui::GetCursorScreenPos();
+        if (ImGui::InvisibleButton("##shard", ImVec2(cardW, cardH)))
+        {
+            const double now = ImGui::GetTime();
+            if (s_shardLastClickIndex == i && now - s_shardLastClick < 0.4)
+            {
+                enter_shard(i); // double click
+            }
+            s_shardSelected = i;
+            s_shardLastClick = now;
+            s_shardLastClickIndex = i;
+        }
+        const bool hov = ImGui::IsItemHovered();
+        ImGui::PopID();
+        ImDrawList *cl = ImGui::GetWindowDrawList();
+        const ImVec2 e(p.x + cardW, p.y + cardH);
+        const bool sel = i == s_shardSelected;
+        Overlay_GlassPanel(cl, p, e, 12.f * u, u);
+        if (sel)
+        {
+            cl->AddRectFilled(p, e, IM_COL32(214, 176, 104, 28), 12.f * u);
+            cl->AddRect(p, e, IM_COL32(214, 176, 104, 200), 12.f * u, ImDrawCornerFlags_All, 1.5f);
+        }
+        else if (hov)
+        {
+            cl->AddRect(p, e, IM_COL32(255, 255, 255, 90), 12.f * u, ImDrawCornerFlags_All, 1.f);
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        }
+        const float pad = 16.f * u;
+        float y = p.y + pad;
+        if (i == int(g_ServerList.LastServerIndex) && !g_ServerList.LastServerName.empty())
+        {
+            const char *badge = "LAST PLAYED";
+            const float bw = small->CalcTextSizeA(Overlay_px(small) * 0.85f, FLT_MAX, 0.f, badge).x + 12.f * u;
+            const ImVec2 b0(e.x - pad - bw, y);
+            cl->AddRectFilled(b0, ImVec2(b0.x + bw, b0.y + Overlay_px(small) + 4.f * u), IM_COL32(214, 176, 104, 220), 4.f * u);
+            cl->AddText(small, Overlay_px(small) * 0.85f, ImVec2(b0.x + 6.f * u, b0.y + 3.f * u), IM_COL32(26, 20, 12, 255), badge);
+        }
+        cl->AddText(title, Overlay_px(title) * 0.42f, ImVec2(p.x + pad, y + 18.f * u), sel ? COL_GOLD : COL_TEXT, shard->Name.c_str());
+        y += 18.f * u + Overlay_px(title) * 0.42f + 14.f * u;
+
+        // fullness
+        char full[48];
+        snprintf(full, sizeof(full), "%s  \xC2\xB7  %d%% full", fullness_word(shard->FullPercent), int(shard->FullPercent));
+        cl->AddText(small, Overlay_px(small), ImVec2(p.x + pad, y), COL_MUTED, full);
+        y += Overlay_px(small) + 6.f * u;
+        const float barW = cardW - pad * 2;
+        cl->AddRectFilled(ImVec2(p.x + pad, y), ImVec2(p.x + pad + barW, y + 4.f * u), IM_COL32(255, 255, 255, 30), 2.f);
+        cl->AddRectFilled(ImVec2(p.x + pad, y), ImVec2(p.x + pad + barW * std::min(100, int(shard->FullPercent)) / 100.f, y + 4.f * u),
+                          shard->FullPercent >= 95 ? IM_COL32(248, 113, 113, 255) : COL_GOLD, 2.f);
+        y += 4.f * u + 14.f * u;
+
+        // latency (shard ping when the client has it, else the login server's) and time zone
+        const int ms = shard->Ping >= 0 ? shard->Ping : latency;
+        signal_bars(cl, ImVec2(p.x + pad, y), Overlay_px(small), ms, u);
+        char info[64];
+        if (ms >= 0)
+            snprintf(info, sizeof(info), "%d ms", ms);
+        else
+            snprintf(info, sizeof(info), "measuring...");
+        cl->AddText(small, Overlay_px(small), ImVec2(p.x + pad + 24.f * u, y), COL_MUTED, info);
+        const int tz = int(int8_t(shard->Timezone));
+        if (tz != 0)
+        {
+            char zone[24];
+            snprintf(zone, sizeof(zone), "GMT%+d", tz);
+            const float zw = small->CalcTextSizeA(Overlay_px(small), FLT_MAX, 0.f, zone).x;
+            cl->AddText(small, Overlay_px(small), ImVec2(e.x - pad - zw, y), COL_MUTED, zone);
+        }
+        if (hov)
+        {
+            ImGui::SetTooltip("Double-click to enter %s", shard->Name.c_str());
+        }
+    }
+    ImGui::EndChild();
+
+    // keyboard: arrows move through the cards in display order, Enter plays, Esc goes back
+    const ImGuiIO &io = ImGui::GetIO();
+    const int pos = int(std::find(order.begin(), order.end(), s_shardSelected) - order.begin());
+    if (count > 0 && (ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_RightArrow]) || ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_DownArrow])))
+    {
+        s_shardSelected = order[std::min(count - 1, pos + 1)];
+    }
+    if (count > 0 && (ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_LeftArrow]) || ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_UpArrow])))
+    {
+        s_shardSelected = order[std::max(0, pos - 1)];
+    }
+
+    // footer: back and enter
+    const float by = display.y - 90.f * u - footerH + 20.f * u;
+    const float backW = 140.f * u;
+    CServer *chosen = g_ServerList.GetServer(s_shardSelected);
+    const std::string go = chosen != nullptr ? "Enter " + chosen->Name : std::string("Enter");
+    const float goW = std::max(220.f * u, body->CalcTextSizeA(Overlay_px(body), FLT_MAX, 0.f, go.c_str()).x + 60.f * u);
+    const float total = backW + 12.f * u + goW;
+    ImGui::PushFont(body);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.f * u);
+    ImGui::SetCursorScreenPos(ImVec2(floorf((display.x - total) / 2), by));
+    if (Overlay_CardButton("Back", ImVec2(backW, footerH), false) || ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_Escape], false))
+    {
+        Overlay_Later([] { g_ServerScreen.CreateSmoothAction(CServerScreen::ID_SMOOTH_SS_GO_SCREEN_MAIN); });
+    }
+    ImGui::SameLine(0, 12.f * u);
+    if ((Overlay_CardButton(go.c_str(), ImVec2(goW, footerH), true) || ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_Enter], false)) &&
+        chosen != nullptr)
+    {
+        enter_shard(s_shardSelected);
+    }
+    ImGui::PopStyleVar();
+    ImGui::PopFont();
+}
+
 void Overlay_DrawLogin()
 {
     const ImVec2 display = ImGui::GetIO().DisplaySize;
@@ -1012,11 +1285,18 @@ void Overlay_DrawLogin()
     dl->AddLine(ImVec2(mid + gap, ruleY), ImVec2(mid + gap + ruleW, ruleY), ruleCol);
     Overlay_TextCentered(dl, small, ruleY - Overlay_px(small) / 2 - 1.f, x0, contentW, COL_GOLD, tagline);
 
-    draw_card(display, x0, contentW, u);
-    draw_footer(display, u);
-    if (g_GameState == GS_MAIN_CONNECT)
+    if (g_GameState == GS_SERVER)
     {
-        s_panelOpen = false; // no switching servers mid-connection
+        draw_shards(display, u);
+    }
+    else
+    {
+        draw_card(display, x0, contentW, u);
+    }
+    draw_footer(display, u);
+    if (g_GameState != GS_MAIN)
+    {
+        s_panelOpen = false; // no switching servers once connecting or signed in
     }
     else if (s_panelT < 0.5f)
     {
