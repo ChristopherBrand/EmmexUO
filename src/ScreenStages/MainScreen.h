@@ -47,6 +47,8 @@ public:
     void Reset() const;
     // Back to the fixed 640x480 window the classic (gump) screens are laid out for.
     static void UseClassicWindow();
+    // The resizable window the overlay screens (login, character creation) are laid out for.
+    static void UseModernWindow();
 };
 
 extern CMainScreen g_MainScreen;

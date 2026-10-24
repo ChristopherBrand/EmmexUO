@@ -24,8 +24,8 @@ ImFont *Overlay_LoginFont(LoginFont font);
 void Overlay_DrawLogin();
 void Overlay_LoginHidden();
 void Overlay_LoginShutdown();
-// Absolute path of a bundled resource (resources/<name>), or empty if missing.
-std::string Overlay_ResourcePath(const char *name);
+void Overlay_DrawCreate();
+void Overlay_CreateHidden();
 
 // Macro editor key capture: returns true if the event was used to bind a key.
 bool Overlay_MacroCaptureEvent(const SDL_Event &e);

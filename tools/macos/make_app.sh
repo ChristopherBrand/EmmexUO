@@ -25,7 +25,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BUILD/src/xuolauncher" "$BUILD/src/crossuo" "$BUILD/src/crossuo.so" "$APP/Contents/MacOS/"
 cp "$ROOT/resources/crossuo.icns" "$APP/Contents/Resources/"
-cp -R "$ROOT/resources/fonts" "$ROOT/resources/login" "$APP/Contents/Resources/"
+cp -R "$ROOT/resources/fonts" "$ROOT/resources/login" "$ROOT/resources/create" "$APP/Contents/Resources/"
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

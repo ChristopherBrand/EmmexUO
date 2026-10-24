@@ -82,6 +82,10 @@ Files: external/gfx/sokol*
 Copyright: 2018 Andre Weissflog
 License: Zlib or Libpng
 
+Files: external/pl_mpeg.h
+Copyright: Dominic Szablewski - https://phoboslab.org
+License: MIT
+
 Files: external/stb_image.h external/stb_image_write.h external/gfx/stb_truetype.h external/gfx/imgui/imstb*
 Copyright: Sean Barrett 2010-2015
 License: MIT or Unlicense

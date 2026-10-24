@@ -10,6 +10,7 @@
 #if defined(NEW_RENDERER_ENABLED) && defined(USE_GL3)
 
 #include "OverlayPanels.h"
+#include "OverlayKit.h"
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -32,14 +33,6 @@
 #include "../TextEngine/EntryText.h"
 #include "revision.h" // after Config.h: its CLIENT_VERSION macro clashes with an enum name
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-function"
-#define STB_IMAGE_STATIC
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_JPEG
-#define STBI_ONLY_PNG
-#include <external/stb_image.h>
-#pragma clang diagnostic pop
 
 static const char *URL_ACCOUNT = "https://accounts.eamythic.com/";
 static const char *URL_UOCOM = "https://uo.com";
@@ -50,14 +43,8 @@ static const char *URL_CREDITS = "https://github.com/ChristopherBrand/EmmexUO/gr
 static const int FIELD_MAX = 16;
 
 // backdrop layers: a looping cloud strip drifting behind the castle and mountains
-struct LoginImage
-{
-    void *texture = nullptr;
-    int width = 0;
-    int height = 0;
-};
-static LoginImage s_clouds;
-static LoginImage s_foreground;
+static OverlayImage s_clouds;
+static OverlayImage s_foreground;
 static bool s_backdropTried = false;
 
 static char s_account[FIELD_MAX + 1];
@@ -66,69 +53,8 @@ static bool s_accountActive = false;
 static bool s_passwordActive = false;
 static bool s_wasShown = false;
 
-// login fonts are rasterized at 2x (see Overlay.cpp); this maps them to the current layout
-static float s_textScale = 0.5f;
 
-static float px(const ImFont *font)
-{
-    return font->FontSize * s_textScale;
-}
 
-static const ImU32 COL_TEXT = IM_COL32(236, 230, 218, 255);
-static const ImU32 COL_MUTED = IM_COL32(236, 230, 218, 150);
-static const ImU32 COL_GOLD = IM_COL32(214, 176, 104, 255);
-
-std::string Overlay_ResourcePath(const char *name)
-{
-    // next to the client in a build tree, or in Contents/Resources inside EmmexUO.app
-    // (the executable's own folder: apps opened from Finder start in '/')
-    const char *dirs[] = { "resources", "../Resources" };
-    for (const auto dir : dirs)
-    {
-        const fs_path path = fs_path_join(fs_path_process(), dir, name);
-        if (fs_path_exists(path))
-        {
-            return fs_path_ascii(path);
-        }
-    }
-    return {};
-}
-
-// Loads an image, optionally taking its alpha channel from a separate greyscale file
-// (keeps the painted foreground a small JPEG instead of a large RGBA PNG).
-static LoginImage load_image(const char *name, const char *alphaName = nullptr)
-{
-    LoginImage image;
-    const std::string path = Overlay_ResourcePath(name);
-    int w = 0, h = 0, n = 0;
-    uint8_t *pixels = path.empty() ? nullptr : stbi_load(path.c_str(), &w, &h, &n, 4);
-    if (pixels == nullptr)
-    {
-        return image;
-    }
-    if (alphaName != nullptr)
-    {
-        const std::string alphaPath = Overlay_ResourcePath(alphaName);
-        int aw = 0, ah = 0, an = 0;
-        uint8_t *alpha = alphaPath.empty() ? nullptr : stbi_load(alphaPath.c_str(), &aw, &ah, &an, 1);
-        if (alpha != nullptr && aw == w && ah == h)
-        {
-            for (int i = 0; i < w * h; i++)
-            {
-                pixels[i * 4 + 3] = alpha[i];
-            }
-        }
-        if (alpha != nullptr)
-        {
-            stbi_image_free(alpha);
-        }
-    }
-    image.texture = Render_OverlayCreateImage(w, h, pixels);
-    image.width = w;
-    image.height = h;
-    stbi_image_free(pixels);
-    return image;
-}
 
 void Overlay_LoginShutdown()
 {
@@ -146,8 +72,8 @@ static void draw_backdrop(ImDrawList *dl, const ImVec2 &size)
     if (!s_backdropTried)
     {
         s_backdropTried = true;
-        s_clouds = load_image("login/clouds.jpg");
-        s_foreground = load_image("login/foreground.jpg", "login/foreground_alpha.png");
+        s_clouds = Overlay_LoadImage("login/clouds.jpg");
+        s_foreground = Overlay_LoadImage("login/foreground.jpg", "login/foreground_alpha.png");
     }
     dl->AddRectFilled(ImVec2(0, 0), size, IM_COL32(32, 28, 48, 255));
     const float t = float(ImGui::GetTime());
@@ -230,14 +156,6 @@ static void draw_backdrop(ImDrawList *dl, const ImVec2 &size)
         IM_COL32(0, 0, 0, 0));
 }
 
-static void text_centered(
-    ImDrawList *dl, ImFont *font, float y, float x0, float width, ImU32 col, const char *text)
-{
-    const ImVec2 ts = font->CalcTextSizeA(px(font), FLT_MAX, 0.f, text);
-    const ImVec2 pos(floorf(x0 + (width - ts.x) / 2), y);
-    dl->AddText(font, px(font), ImVec2(pos.x + 1, pos.y + 2), IM_COL32(0, 0, 0, 160), text);
-    dl->AddText(font, px(font), pos, col, text);
-}
 
 static int filter_field_char(ImGuiInputTextCallbackData *data)
 {
@@ -264,24 +182,7 @@ static void sync_from_model()
     }
 }
 
-// Screen changes requested from the login scene run from the main loop, between frames:
-// connecting renders a frame of its own, which can't happen inside an overlay frame.
-static std::function<void()> s_pending;
 
-static void later(std::function<void()> action)
-{
-    s_pending = std::move(action);
-}
-
-void Overlay_LoginRunPending()
-{
-    if (s_pending)
-    {
-        auto action = std::move(s_pending);
-        s_pending = nullptr;
-        action();
-    }
-}
 
 static bool busy()
 {
@@ -296,103 +197,21 @@ static void login()
     }
     if (LoginServers_NeedsRestart())
     {
-        later(LoginServers_Restart);
+        Overlay_Later(LoginServers_Restart);
         return;
     }
     LoginServers_Save(); // remembers this server's account
-    later([] { g_MainScreen.CreateSmoothAction(CMainScreen::ID_SMOOTH_MS_CONNECT); });
+    Overlay_Later([] { g_MainScreen.CreateSmoothAction(CMainScreen::ID_SMOOTH_MS_CONNECT); });
 }
 
-// Text link: muted until hovered, then gold and underlined.
-static bool link(const char *label, const char *tooltip)
-{
-    const ImVec2 pos = ImGui::GetCursorScreenPos();
-    const ImVec2 size = ImGui::CalcTextSize(label);
-    const bool pressed = ImGui::InvisibleButton(label, size);
-    const bool hovered = ImGui::IsItemHovered();
-    ImDrawList *dl = ImGui::GetWindowDrawList();
-    dl->AddText(pos, hovered ? COL_GOLD : COL_MUTED, label);
-    if (hovered)
-    {
-        dl->AddLine(
-            ImVec2(pos.x, pos.y + size.y), ImVec2(pos.x + size.x, pos.y + size.y), COL_GOLD);
-        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        if (tooltip != nullptr)
-        {
-            ImGui::SetTooltip("%s", tooltip);
-        }
-    }
-    return pressed;
-}
 
-// Draws text wrapped to a width, each line centred; returns the height used.
-static float text_wrapped_centered(ImDrawList *dl, ImFont *font, float x0, float width, float y, ImU32 col, const char *text)
-{
-    const float size = px(font);
-    const char *line = text;
-    const char *end = text + strlen(text);
-    float h = 0;
-    while (line < end)
-    {
-        const char *wrap = font->CalcWordWrapPositionA(size / font->FontSize, line, end, width);
-        if (wrap == line)
-        {
-            wrap++;
-        }
-        const char *next = wrap;
-        while (next < end && (*next == ' ' || *next == '\n'))
-        {
-            next++;
-        }
-        const float lw = font->CalcTextSizeA(size, FLT_MAX, 0.f, line, wrap).x;
-        dl->AddText(font, size, ImVec2(floorf(x0 + (width - lw) / 2), y + h), col, line, wrap);
-        h += size * 1.35f;
-        line = next;
-    }
-    return h;
-}
 
-static void spinner(ImDrawList *dl, const ImVec2 &c, float r, float thick)
-{
-    const float t = float(ImGui::GetTime());
-    dl->AddCircle(c, r, IM_COL32(255, 255, 255, 30), 48, thick);
-    const float a0 = t * 4.2f;
-    const float sweep = 1.6f + 0.9f * sinf(t * 2.1f);
-    dl->PathArcTo(c, r, a0, a0 + sweep, 32);
-    dl->PathStroke(COL_GOLD, false, thick);
-}
 
-static void alert_icon(ImDrawList *dl, const ImVec2 &c, float r, ImU32 col, float u)
-{
-    dl->AddCircle(c, r, col, 48, 2.f * u);
-    dl->AddLine(ImVec2(c.x, c.y - r * 0.45f), ImVec2(c.x, c.y + r * 0.12f), col, 2.4f * u);
-    dl->AddCircleFilled(ImVec2(c.x, c.y + r * 0.42f), 1.8f * u, col, 12);
-}
 
-static bool card_button(const char *label, const ImVec2 &size, bool primary)
-{
-    if (primary)
-    {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(COL_GOLD));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.91f, 0.77f, 0.50f, 1.f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.74f, 0.59f, 0.33f, 1.f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.10f, 0.08f, 0.05f, 1.f));
-    }
-    else
-    {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.f, 1.f, 1.f, 0.08f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.f, 1.f, 1.f, 0.14f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.f, 1.f, 1.f, 0.20f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(COL_TEXT));
-    }
-    const bool pressed = ImGui::Button(label, size);
-    ImGui::PopStyleColor(4);
-    return pressed;
-}
 
 static void back_to_login()
 {
-    later([] {
+    Overlay_Later([] {
         g_ConnectionScreen.CreateSmoothAction(CConnectionScreen::ID_SMOOTH_CS_GO_SCREEN_MAIN);
     });
 }
@@ -415,23 +234,23 @@ static void draw_status(const ImVec2 &pos, float width, float height, float pad,
     {
         std::string label = LoginServers_DisplayName(servers[active]);
         std::transform(label.begin(), label.end(), label.begin(), ::toupper);
-        text_wrapped_centered(dl, small, pos.x + pad, innerW, pos.y + pad, COL_MUTED, label.c_str());
+        Overlay_TextWrappedCentered(dl, small, pos.x + pad, innerW, pos.y + pad, COL_MUTED, label.c_str());
     }
 
     // icon and message, centred in the space above the buttons
-    const float buttonH = px(body) + 22.f * u;
+    const float buttonH = Overlay_px(body) + 22.f * u;
     const float iconR = 22.f * u;
     const ImVec2 iconC(pos.x + width / 2, pos.y + height * 0.32f);
     if (waiting)
     {
-        spinner(dl, iconC, iconR, 3.f * u);
+        Overlay_Spinner(dl, iconC, iconR, 3.f * u);
     }
     else
     {
-        alert_icon(dl, iconC, iconR, lost ? COL_MUTED : IM_COL32(248, 113, 113, 255), u);
+        Overlay_AlertIcon(dl, iconC, iconR, lost ? COL_MUTED : IM_COL32(248, 113, 113, 255), u);
     }
     const astr_t message = lost ? astr_t("Connection lost") : g_ConnectionScreen.LoginMessage();
-    text_wrapped_centered(
+    Overlay_TextWrappedCentered(
         dl, body, pos.x + pad, innerW, iconC.y + iconR + 18.f * u, COL_TEXT, message.c_str());
 
     // buttons along the bottom, where Log In was
@@ -444,9 +263,9 @@ static void draw_status(const ImVec2 &pos, float width, float height, float pad,
     const bool escape = ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_Escape], false);
     if (waiting)
     {
-        if (card_button("Cancel", ImVec2(innerW, buttonH), false) || escape)
+        if (Overlay_CardButton("Cancel", ImVec2(innerW, buttonH), false) || escape)
         {
-            later([] {
+            Overlay_Later([] {
                 g_ConnectionManager.Disconnect();
                 g_ConnectionScreen.CreateSmoothAction(CConnectionScreen::ID_SMOOTH_CS_GO_SCREEN_MAIN);
             });
@@ -454,7 +273,7 @@ static void draw_status(const ImVec2 &pos, float width, float height, float pad,
     }
     else if (lost)
     {
-        if (card_button("Back to Login", ImVec2(innerW, buttonH), true) || enter || escape)
+        if (Overlay_CardButton("Back to Login", ImVec2(innerW, buttonH), true) || enter || escape)
         {
             back_to_login();
         }
@@ -463,14 +282,14 @@ static void draw_status(const ImVec2 &pos, float width, float height, float pad,
     {
         const float gap = 10.f * u;
         const float half = (innerW - gap) / 2;
-        if (card_button("Back", ImVec2(half, buttonH), false) || escape)
+        if (Overlay_CardButton("Back", ImVec2(half, buttonH), false) || escape)
         {
             back_to_login();
         }
         ImGui::SameLine(0, gap);
-        if (card_button("Try Again", ImVec2(half, buttonH), true) || enter)
+        if (Overlay_CardButton("Try Again", ImVec2(half, buttonH), true) || enter)
         {
-            later([] { g_Game.Connect(); });
+            Overlay_Later([] { g_Game.Connect(); });
         }
     }
     ImGui::PopStyleVar(2);
@@ -483,8 +302,8 @@ static void draw_card(const ImVec2 &display, float x0, float contentW, float u)
     ImFont *small = Overlay_LoginFont(LoginFont::Small);
     const float width = std::min(380.f * u, contentW - 32.f * u);
     const float pad = 28.f * u;
-    const float fieldH = px(body) + 22.f * u;
-    const float height = pad * 2 + px(small) * 2 + fieldH * 3 + 4.f * u + px(body) +
+    const float fieldH = Overlay_px(body) + 22.f * u;
+    const float height = pad * 2 + Overlay_px(small) * 2 + fieldH * 3 + 4.f * u + Overlay_px(body) +
                          62.f * u;
     const ImVec2 pos(
         floorf(x0 + (contentW - width) / 2), floorf(std::max(display.y * 0.42f, 190.f * u)));
@@ -641,12 +460,12 @@ static void draw_footer(const ImVec2 &display, float u)
     ImFont *small = Overlay_LoginFont(LoginFont::Small);
     ImFont *body = Overlay_LoginFont(LoginFont::Body);
     const float margin = 28.f * u;
-    const float lineH = px(small);
+    const float lineH = Overlay_px(small);
 
     // links, bottom left
     ImGui::PushFont(body);
-    ImGui::SetCursorScreenPos(ImVec2(margin, display.y - margin - lineH - px(body) - 10.f * u));
-    if (link("Account", "Manage your account on the EA website"))
+    ImGui::SetCursorScreenPos(ImVec2(margin, display.y - margin - lineH - Overlay_px(body) - 10.f * u));
+    if (Overlay_Link("Account", "Manage your account on the EA website"))
     {
         Platform::OpenBrowser(URL_ACCOUNT);
     }
@@ -654,21 +473,21 @@ static void draw_footer(const ImVec2 &display, float u)
     ImGui::SameLine(0, 0);
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(COL_MUTED), "%s", sep);
     ImGui::SameLine(0, 0);
-    if (link("UO.com", "Ultima Online news and guides"))
+    if (Overlay_Link("UO.com", "Ultima Online news and guides"))
     {
         Platform::OpenBrowser(URL_UOCOM);
     }
     ImGui::SameLine(0, 0);
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(COL_MUTED), "%s", sep);
     ImGui::SameLine(0, 0);
-    if (link("Help", "EmmexUO on GitHub"))
+    if (Overlay_Link("Help", "EmmexUO on GitHub"))
     {
         Platform::OpenBrowser(URL_HELP);
     }
     ImGui::SameLine(0, 0);
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(COL_MUTED), "%s", sep);
     ImGui::SameLine(0, 0);
-    if (link("Credits", "The people who built this client"))
+    if (Overlay_Link("Credits", "The people who built this client"))
     {
         Platform::OpenBrowser(URL_CREDITS);
     }
@@ -677,21 +496,21 @@ static void draw_footer(const ImVec2 &display, float u)
     const char *quit = "Quit";
     const ImVec2 quitSize = ImGui::CalcTextSize(quit);
     ImGui::SetCursorScreenPos(ImVec2(
-        display.x - margin - quitSize.x, display.y - margin - lineH - px(body) - 10.f * u));
-    if (link(quit, "Quit Ultima Online"))
+        display.x - margin - quitSize.x, display.y - margin - lineH - Overlay_px(body) - 10.f * u));
+    if (Overlay_Link(quit, "Quit Ultima Online"))
     {
-        later([] { g_MainScreen.ProcessSmoothAction(CMainScreen::ID_SMOOTH_MS_QUIT); });
+        Overlay_Later([] { g_MainScreen.ProcessSmoothAction(CMainScreen::ID_SMOOTH_MS_QUIT); });
     }
     ImGui::PopFont();
 
     // versions, along the very bottom
     ImDrawList *dl = ImGui::GetWindowDrawList();
     const astr_t uo = "Ultima Online " + g_Config.ClientVersionString;
-    dl->AddText(small, px(small), ImVec2(margin, display.y - margin - lineH + 4.f * u),
+    dl->AddText(small, Overlay_px(small), ImVec2(margin, display.y - margin - lineH + 4.f * u),
                 IM_COL32(236, 230, 218, 90), uo.c_str());
     const char *client = CLIENT_VERSION;
-    const float cw = small->CalcTextSizeA(px(small), FLT_MAX, 0.f, client).x;
-    dl->AddText(small, px(small),
+    const float cw = small->CalcTextSizeA(Overlay_px(small), FLT_MAX, 0.f, client).x;
+    dl->AddText(small, Overlay_px(small),
                 ImVec2(display.x - margin - cw, display.y - margin - lineH + 4.f * u),
                 IM_COL32(236, 230, 218, 90), client);
 }
@@ -749,36 +568,7 @@ static void status_dot(ImDrawList *dl, const ImVec2 &c, float r, ServerStatus st
     dl->AddCircleFilled(c, r, col, 16);
 }
 
-enum class Chevron
-{
-    Right,
-    Down,
-    Left,
-};
 
-static void chevron(ImDrawList *dl, const ImVec2 &c, float s, Chevron dir, ImU32 col, float thick)
-{
-    ImVec2 p[3];
-    switch (dir)
-    {
-        case Chevron::Right:
-            p[0] = ImVec2(c.x - s / 2, c.y - s);
-            p[1] = ImVec2(c.x + s / 2, c.y);
-            p[2] = ImVec2(c.x - s / 2, c.y + s);
-            break;
-        case Chevron::Down:
-            p[0] = ImVec2(c.x - s, c.y - s / 2);
-            p[1] = ImVec2(c.x, c.y + s / 2);
-            p[2] = ImVec2(c.x + s, c.y - s / 2);
-            break;
-        case Chevron::Left:
-            p[0] = ImVec2(c.x + s / 2, c.y - s);
-            p[1] = ImVec2(c.x - s / 2, c.y);
-            p[2] = ImVec2(c.x + s / 2, c.y + s);
-            break;
-    }
-    dl->AddPolyline(p, 3, col, false, thick);
-}
 
 static void draw_server_pill(float u)
 {
@@ -790,7 +580,7 @@ static void draw_server_pill(float u)
 
     ImGui::PushFont(body);
     const ImVec2 textSize = ImGui::CalcTextSize(name);
-    const float h = px(body) + 18.f * u;
+    const float h = Overlay_px(body) + 18.f * u;
     const ImVec2 pos(24.f * u, 22.f * u);
     const ImVec2 size(textSize.x + 74.f * u, h);
     ImGui::SetCursorScreenPos(pos);
@@ -805,7 +595,7 @@ static void draw_server_pill(float u)
     const ServerStatus status = server != nullptr ? LoginServers_Status(*server) : ServerStatus::Unknown;
     status_dot(dl, ImVec2(pos.x + 18.f * u, cy), 4.5f * u, status);
     dl->AddText(ImVec2(pos.x + 32.f * u, cy - textSize.y / 2), COL_TEXT, name);
-    chevron(dl, ImVec2(end.x - 20.f * u, cy), 4.f * u, Chevron::Down, hovered ? COL_GOLD : COL_MUTED, 1.6f * u);
+    Overlay_Chevron(dl, ImVec2(end.x - 20.f * u, cy), 4.f * u, Chevron::Down, hovered ? COL_GOLD : COL_MUTED, 1.6f * u);
     ImGui::PopFont();
 
     if (hovered)
@@ -822,26 +612,6 @@ static void draw_server_pill(float u)
     }
 }
 
-// A labelled text field in the server editor; returns true once an edit is finished.
-static bool field(const char *label, const char *hint, std::string *value, float width, bool focus = false,
-                  ImGuiInputTextFlags flags = 0)
-{
-    ImFont *small = Overlay_LoginFont(LoginFont::Small);
-    ImGui::BeginGroup();
-    ImGui::PushFont(small);
-    ImGui::TextDisabled("%s", label);
-    ImGui::PopFont();
-    ImGui::PushItemWidth(width);
-    if (focus)
-    {
-        ImGui::SetKeyboardFocusHere();
-    }
-    ImGui::InputTextWithHint((std::string("##") + label).c_str(), hint, value, flags);
-    const bool done = ImGui::IsItemDeactivatedAfterEdit();
-    ImGui::PopItemWidth();
-    ImGui::EndGroup();
-    return done;
-}
 
 static void draw_server_editor(int index, LoginServer &server, float width, float u)
 {
@@ -853,29 +623,29 @@ static void draw_server_editor(int index, LoginServer &server, float width, floa
     ImGui::Dummy(ImVec2(0, 2.f * u));
     const bool focus = s_focusName == index;
     s_focusName = focus ? -1 : s_focusName;
-    save |= field("NAME", "Unnamed server", &server.Name, width, focus);
+    save |= Overlay_Field("NAME", "Unnamed server", &server.Name, width, focus);
 
     // side-by-side fields: line both groups up on the same top edge
     const float portW = 86.f * u;
     float rowY = ImGui::GetCursorPosY();
-    if (field("ADDRESS", "login.example.com", &server.Host, width - portW - gap))
+    if (Overlay_Field("ADDRESS", "login.example.com", &server.Host, width - portW - gap))
     {
         live = true;
     }
     ImGui::SameLine(0, gap);
     ImGui::SetCursorPosY(rowY);
     std::string port = std::to_string(server.Port);
-    if (field("PORT", "2593", &port, portW, false, ImGuiInputTextFlags_CharsDecimal))
+    if (Overlay_Field("PORT", "2593", &port, portW, false, ImGuiInputTextFlags_CharsDecimal))
     {
         server.Port = std::max(1, std::min(65535, atoi(port.c_str())));
         live = true;
     }
 
-    save |= field("CLIENT VERSION", "7.0.33.1", &server.ClientVersion, width);
+    save |= Overlay_Field("CLIENT VERSION", "7.0.33.1", &server.ClientVersion, width);
 
     const float browseW = 84.f * u;
     rowY = ImGui::GetCursorPosY();
-    save |= field("GAME DATA FOLDER", "Folder with the UO data files", &server.DataPath, width - browseW - gap);
+    save |= Overlay_Field("GAME DATA FOLDER", "Folder with the UO data files", &server.DataPath, width - browseW - gap);
     ImGui::SameLine(0, gap);
     ImGui::SetCursorPosY(rowY);
     ImGui::BeginGroup();
@@ -952,7 +722,7 @@ static void draw_server_row(int index, float width, float u)
     auto &server = LoginServers_List()[index];
     const bool isActive = index == LoginServers_Active();
     const bool expanded = s_expanded[index] != 0;
-    const float rowH = px(body) + px(small) + 26.f * u;
+    const float rowH = Overlay_px(body) + Overlay_px(small) + 26.f * u;
     const float chevronW = 44.f * u;
 
     ImGui::PushID(index);
@@ -985,7 +755,7 @@ static void draw_server_row(int index, float width, float u)
     const ServerStatus status = LoginServers_Status(server);
     const float textX = pos.x + 34.f * u;
     status_dot(dl, ImVec2(pos.x + 17.f * u, pos.y + rowH / 2), 4.5f * u, status);
-    dl->AddText(body, px(body), ImVec2(textX, pos.y + 11.f * u), COL_TEXT, LoginServers_DisplayName(server));
+    dl->AddText(body, Overlay_px(body), ImVec2(textX, pos.y + 11.f * u), COL_TEXT, LoginServers_DisplayName(server));
     char address[300];
     snprintf(
         address,
@@ -993,14 +763,14 @@ static void draw_server_row(int index, float width, float u)
         "%s:%d",
         server.Host.empty() ? "no address" : server.Host.c_str(),
         server.Port);
-    dl->AddText(small, px(small), ImVec2(textX, pos.y + 15.f * u + px(body)), COL_MUTED, address);
+    dl->AddText(small, Overlay_px(small), ImVec2(textX, pos.y + 15.f * u + Overlay_px(body)), COL_MUTED, address);
     if (isActive)
     {
         const char *badge = "IN USE";
-        const float bw = small->CalcTextSizeA(px(small), FLT_MAX, 0.f, badge).x;
-        dl->AddText(small, px(small), ImVec2(end.x - chevronW - bw - 4.f * u, pos.y + 11.f * u + 2.f * u), COL_GOLD, badge);
+        const float bw = small->CalcTextSizeA(Overlay_px(small), FLT_MAX, 0.f, badge).x;
+        dl->AddText(small, Overlay_px(small), ImVec2(end.x - chevronW - bw - 4.f * u, pos.y + 11.f * u + 2.f * u), COL_GOLD, badge);
     }
-    chevron(
+    Overlay_Chevron(
         dl,
         ImVec2(end.x - chevronW / 2, pos.y + rowH / 2),
         4.5f * u,
@@ -1064,7 +834,7 @@ static void draw_server_panel(const ImVec2 &display, float panelW, float ease, f
 
     // header: title and a close chevron
     const float headerY = 24.f * u;
-    dl->AddText(title, px(title) * 0.5f, ImVec2(x + pad, headerY), COL_TEXT, "Servers");
+    dl->AddText(title, Overlay_px(title) * 0.5f, ImVec2(x + pad, headerY), COL_TEXT, "Servers");
     const float closeSize = 32.f * u;
     ImGui::SetCursorScreenPos(ImVec2(x + panelW - pad - closeSize + 8.f * u, headerY - 2.f * u));
     if (ImGui::InvisibleButton("##close", ImVec2(closeSize, closeSize)))
@@ -1076,16 +846,16 @@ static void draw_server_panel(const ImVec2 &display, float panelW, float ease, f
     {
         ImGui::SetTooltip("Close");
     }
-    chevron(
+    Overlay_Chevron(
         dl,
         ImVec2(x + panelW - pad - closeSize / 2 + 8.f * u, headerY - 2.f * u + closeSize / 2),
         5.f * u,
         Chevron::Left,
         closeHovered ? COL_GOLD : COL_MUTED,
         1.8f * u);
-    float y = headerY + px(title) * 0.5f + 8.f * u;
-    dl->AddText(small, px(small), ImVec2(x + pad, y), COL_MUTED, "Click a server to use it, or the arrow to edit it.");
-    y += px(small) + 18.f * u;
+    float y = headerY + Overlay_px(title) * 0.5f + 8.f * u;
+    dl->AddText(small, Overlay_px(small), ImVec2(x + pad, y), COL_MUTED, "Click a server to use it, or the arrow to edit it.");
+    y += Overlay_px(small) + 18.f * u;
 
     // restart banner when the server in use needs settings that load at startup
     ImGui::PushFont(body);
@@ -1113,7 +883,7 @@ static void draw_server_panel(const ImVec2 &display, float panelW, float ease, f
 
     if (LoginServers_NeedsRestart())
     {
-        const float bannerH = px(body) * 2 + 34.f * u;
+        const float bannerH = Overlay_px(body) * 2 + 34.f * u;
         const ImVec2 b0(x + pad, y);
         const ImVec2 b1(x + pad + innerW, y + bannerH);
         dl->AddRectFilled(b0, b1, IM_COL32(214, 176, 104, 34), 10.f * u);
@@ -1127,14 +897,14 @@ static void draw_server_panel(const ImVec2 &display, float panelW, float ease, f
         ImGui::EndGroup();
         const char *restart = "Restart";
         const float rw = ImGui::CalcTextSize(restart).x + 28.f * u;
-        ImGui::SetCursorScreenPos(ImVec2(b1.x - rw - 12.f * u, b0.y + (bannerH - px(body) - 16.f * u) / 2));
+        ImGui::SetCursorScreenPos(ImVec2(b1.x - rw - 12.f * u, b0.y + (bannerH - Overlay_px(body) - 16.f * u) / 2));
         ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(COL_GOLD));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.91f, 0.77f, 0.50f, 1.f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.74f, 0.59f, 0.33f, 1.f));
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.10f, 0.08f, 0.05f, 1.f));
         if (ImGui::Button(restart, ImVec2(rw, 0)) && !busy())
         {
-            later(LoginServers_Restart);
+            Overlay_Later(LoginServers_Restart);
         }
         ImGui::PopStyleColor(4);
         y += bannerH + 14.f * u;
@@ -1200,7 +970,7 @@ void Overlay_DrawLogin()
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     // layout unit, independent of the game's UI scale: 1 at 1280x800 points
     const float u = std::max(0.75f, std::min(2.f, std::min(display.x / 1280.f, display.y / 800.f)));
-    s_textScale = ImGui::GetIO().FontGlobalScale * u / 2.f;
+    Overlay_SetTextScale(u);
 
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(display);
@@ -1229,18 +999,18 @@ void Overlay_DrawLogin()
     // title
     ImFont *title = Overlay_LoginFont(LoginFont::Title);
     ImFont *small = Overlay_LoginFont(LoginFont::Small);
-    const float titleY = std::max(display.y * 0.42f, 190.f * u) - px(title) - 58.f * u;
-    text_centered(dl, title, titleY, x0, contentW, COL_TEXT, "ULTIMA ONLINE");
+    const float titleY = std::max(display.y * 0.42f, 190.f * u) - Overlay_px(title) - 58.f * u;
+    Overlay_TextCentered(dl, title, titleY, x0, contentW, COL_TEXT, "ULTIMA ONLINE");
     // tagline between two short gold rules
     const char *tagline = "BRITANNIA AWAITS";
-    const float ruleY = titleY + px(title) + 16.f * u;
-    const float gap = small->CalcTextSizeA(px(small), FLT_MAX, 0.f, tagline).x / 2 + 16.f * u;
+    const float ruleY = titleY + Overlay_px(title) + 16.f * u;
+    const float gap = small->CalcTextSizeA(Overlay_px(small), FLT_MAX, 0.f, tagline).x / 2 + 16.f * u;
     const float ruleW = 64.f * u;
     const float mid = x0 + contentW / 2;
     const ImU32 ruleCol = IM_COL32(214, 176, 104, 140);
     dl->AddLine(ImVec2(mid - gap - ruleW, ruleY), ImVec2(mid - gap, ruleY), ruleCol);
     dl->AddLine(ImVec2(mid + gap, ruleY), ImVec2(mid + gap + ruleW, ruleY), ruleCol);
-    text_centered(dl, small, ruleY - px(small) / 2 - 1.f, x0, contentW, COL_GOLD, tagline);
+    Overlay_TextCentered(dl, small, ruleY - Overlay_px(small) / 2 - 1.f, x0, contentW, COL_GOLD, tagline);
 
     draw_card(display, x0, contentW, u);
     draw_footer(display, u);

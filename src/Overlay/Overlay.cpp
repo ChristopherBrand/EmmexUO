@@ -14,6 +14,7 @@
 #include "../Renderer/RenderAPI.h"
 #include <xuocore/enumlist.h>
 #include "OverlayPanels.h"
+#include "OverlayKit.h"
 #include "../Application.h"
 #include "../Config.h"
 #include "../GameWindow.h"
@@ -50,6 +51,17 @@ bool Overlay_LoginActive()
     return g_GameState == GS_MAIN || connecting;
 }
 
+// Character creation (profession, appearance and starting city) as one overlay screen.
+bool Overlay_CreateActive()
+{
+    return s_initialized && g_GameState >= GS_PROFESSION_SELECT && g_GameState <= GS_SELECT_TOWN;
+}
+
+bool Overlay_SceneActive()
+{
+    return Overlay_LoginActive() || Overlay_CreateActive();
+}
+
 bool &Overlay_Visible(OverlayWindow w)
 {
     return s_visible[int(w)];
@@ -63,7 +75,7 @@ static bool shown(OverlayWindow w)
 
 static bool any_visible()
 {
-    return Overlay_LoginActive() || shown(OverlayWindow::Journal) || shown(OverlayWindow::Settings) ||
+    return Overlay_SceneActive() || shown(OverlayWindow::Journal) || shown(OverlayWindow::Settings) ||
            shown(OverlayWindow::Macros) || shown(OverlayWindow::Target);
 }
 
@@ -255,9 +267,9 @@ bool Overlay_ProcessEvent(const SDL_Event &e)
         return true;
     }
     ImGui_ImplSDL2_ProcessEvent(&e);
-    if (Overlay_LoginActive())
+    if (Overlay_SceneActive())
     {
-        // the login screen is entirely overlay; the classic gump underneath gets no input,
+        // the login and creation screens are entirely overlay; the classic gump underneath gets no input,
         // except the window shortcuts (Cmd+= / Cmd+- scale, Cmd+Ctrl+F full screen)
         if (e.type == SDL_KEYDOWN && (e.key.keysym.mod & KMOD_GUI) != 0)
         {
@@ -322,26 +334,39 @@ bool Overlay_ProcessEvent(const SDL_Event &e)
 void Overlay_Render()
 {
     static bool s_loginWasActive = false;
+    static bool s_createWasActive = false;
+    static bool s_sceneWasActive = false;
     const bool loginActive = Overlay_LoginActive();
+    const bool createActive = Overlay_CreateActive();
+    const bool sceneActive = loginActive || createActive;
     if (s_loginWasActive && !loginActive)
     {
         Overlay_LoginHidden();
+    }
+    if (s_createWasActive && !createActive)
+    {
+        Overlay_CreateHidden();
+    }
+    s_loginWasActive = loginActive;
+    s_createWasActive = createActive;
+    if (s_sceneWasActive && !sceneActive)
+    {
         Render_SetVSync(false);
         // back to the game's own cursor: hide the system one again
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
         SDL_ShowCursor(SDL_DISABLE);
     }
-    if (loginActive && !s_loginWasActive)
+    if (sceneActive && !s_sceneWasActive)
     {
-        // the drifting backdrop needs frames in step with the display
+        // the moving backdrops need frames in step with the display
         Render_SetVSync(true);
     }
-    if (loginActive)
+    if (sceneActive)
     {
-        // the login screen uses the native pointer (arrow, I-beam, hand) instead of drawing one
+        // full-window screens use the native pointer (arrow, I-beam, hand) instead of drawing one
         ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NoMouseCursorChange;
     }
-    s_loginWasActive = loginActive;
+    s_sceneWasActive = sceneActive;
 
     if (!s_initialized || !any_visible())
     {
@@ -352,13 +377,17 @@ void Overlay_Render()
     ImGui_ImplSDL2_NewFrame(s_window);
     ImGui::NewFrame();
     // In game, a software cursor over overlay windows (the game draws its own underneath);
-    // the login screen uses the native pointer instead.
-    ImGui::GetIO().MouseDrawCursor = !loginActive && ImGui::GetIO().WantCaptureMouse;
+    // the full-window screens use the native pointer instead.
+    ImGui::GetIO().MouseDrawCursor = !sceneActive && ImGui::GetIO().WantCaptureMouse;
 
     const float scale = float(s_fontScale);
     if (loginActive)
     {
         Overlay_DrawLogin();
+    }
+    if (createActive)
+    {
+        Overlay_DrawCreate();
     }
     if (shown(OverlayWindow::Journal))
     {

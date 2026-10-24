@@ -51,6 +51,8 @@ set(renderer_src
   Overlay/Overlay.cpp
   Overlay/OverlayPanels.cpp
   Overlay/OverlayLogin.cpp
+  Overlay/OverlayKit.cpp
+  Overlay/OverlayCreate.cpp
   Renderer/RenderTypes.cpp
 )
 
@@ -351,6 +353,7 @@ endif()
 # fonts and art for the overlay screens, next to the client (EmmexUO.app: Contents/Resources)
 add_custom_command(TARGET crossuo POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/resources/fonts" "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/resources/fonts"
-  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/resources/login" "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/resources/login")
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/resources/login" "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/resources/login"
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/resources/create" "${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_CFG_INTDIR}/resources/create")
 
 xuo_disable_console(crossuo)

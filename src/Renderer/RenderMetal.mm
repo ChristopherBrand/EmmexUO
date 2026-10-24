@@ -966,6 +966,18 @@ void *Render_OverlayCreateImage(int width, int height, const uint8_t *rgba)
     return (__bridge_retained void *)tex;
 }
 
+void Render_OverlayUpdateImage(void *image, int width, int height, const uint8_t *rgba)
+{
+    if (image != nullptr)
+    {
+        id<MTLTexture> tex = (__bridge id<MTLTexture>)image;
+        [tex replaceRegion:MTLRegionMake2D(0, 0, NSUInteger(width), NSUInteger(height))
+               mipmapLevel:0
+                 withBytes:rgba
+               bytesPerRow:NSUInteger(width) * 4];
+    }
+}
+
 void Render_OverlayDestroyImage(void *image)
 {
     if (image != nullptr)

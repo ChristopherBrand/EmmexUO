@@ -51,6 +51,8 @@ void Render_OverlayDraw(ImDrawData *drawData);
 void Render_SetVSync(bool enabled);
 void *Render_OverlayCreateImage(int width, int height, const uint8_t *rgba);
 void Render_OverlayDestroyImage(void *image);
+// Replaces the pixels of an image made by Render_OverlayCreateImage (same size).
+void Render_OverlayUpdateImage(void *image, int width, int height, const uint8_t *rgba);
 
 RenderState Render_DefaultState();
 void Render_ResetCmdList(RenderCmdList *cmdList, RenderState state);

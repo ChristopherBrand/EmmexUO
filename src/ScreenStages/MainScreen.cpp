@@ -76,27 +76,31 @@ void CMainScreen::Reset() const
 {
     if (Overlay_LoginActive())
     {
-        // the modern login screen lays itself out for any window size; only grow the window
-        // when it comes from the fixed 640x480 screens (or at startup), so returning here
-        // after a failed login keeps the size the player chose
-        g_GameWindow.SetWindowResizable(true);
-        if (!is_classic_size())
-        {
-            return;
-        }
-        // open at 1280x800 points, or 90% of a smaller display (GetDisplaySize is logical)
-        int dw = 1280;
-        int dh = 800;
-        GetDisplaySize(&dw, &dh);
-        const int w = std::min(1280, g_GameWindow.ToOS(dw) * 9 / 10);
-        const int h = std::min(800, g_GameWindow.ToOS(dh) * 9 / 10);
-        g_GameWindow.RestoreWindow();
-        g_GameWindow.SetSize(CSize(g_GameWindow.ToLogical(w), g_GameWindow.ToLogical(h)));
-        SDL_SetWindowPosition(
-            g_GameWindow.m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+        UseModernWindow();
         return;
     }
     UseClassicWindow();
+}
+
+void CMainScreen::UseModernWindow()
+{
+    // the overlay screens lay themselves out for any window size; only grow the window when
+    // it comes from the fixed 640x480 screens (or at startup), so coming back keeps the size
+    // the player chose
+    g_GameWindow.SetWindowResizable(true);
+    if (!is_classic_size())
+    {
+        return;
+    }
+    // open at 1280x800 points, or 90% of a smaller display (GetDisplaySize is logical)
+    int dw = 1280;
+    int dh = 800;
+    GetDisplaySize(&dw, &dh);
+    const int w = std::min(1280, g_GameWindow.ToOS(dw) * 9 / 10);
+    const int h = std::min(800, g_GameWindow.ToOS(dh) * 9 / 10);
+    g_GameWindow.RestoreWindow();
+    g_GameWindow.SetSize(CSize(g_GameWindow.ToLogical(w), g_GameWindow.ToLogical(h)));
+    SDL_SetWindowPosition(g_GameWindow.m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 }
 
 void CMainScreen::UseClassicWindow()

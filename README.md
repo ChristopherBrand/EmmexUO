@@ -48,8 +48,10 @@ Early and moving quickly. Working today:
 - A redesigned, resizable login screen
 - Servers managed right on the login screen: live online/offline status, switch with a
   click, edit any server in place, add new ones (no separate launcher step)
+- Character creation on one screen over a living forest glade: professions as illustrated
+  tabs, a live paperdoll, appearance and skills side by side, and the starting city on a map
 
-Next up: the shard, character and character-creation screens, then HD art replacement.
+Next up: the shard and character-list screens, then HD art replacement.
 
 ## Building (Apple Silicon)
 

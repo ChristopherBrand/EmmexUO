@@ -983,6 +983,18 @@ void *Render_OverlayCreateImage(int width, int height, const uint8_t *rgba)
     return (void *)(intptr_t)tex;
 }
 
+void Render_OverlayUpdateImage(void *image, int width, int height, const uint8_t *rgba)
+{
+    GLuint tex = (GLuint)(intptr_t)image;
+    if (tex != 0)
+    {
+        GL_CHECK(glBindTexture(GL_TEXTURE_2D, tex));
+        GL_CHECK(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+        GL_CHECK(glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgba));
+        GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
+    }
+}
+
 void Render_OverlayDestroyImage(void *image)
 {
     GLuint tex = (GLuint)(intptr_t)image;
