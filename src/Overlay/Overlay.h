@@ -33,6 +33,8 @@ void Overlay_Toggle(OverlayWindow w);
 void Overlay_JournalAdd(int textType, uint16_t hue, const astr_t &utf8);
 // True while the overlay draws the login screen in place of the classic main gump.
 bool Overlay_LoginActive();
+// Runs a screen change the login screen asked for; call from the main loop between frames.
+void Overlay_LoginRunPending();
 
 #else
 
@@ -43,5 +45,6 @@ inline void Overlay_Render() {}
 inline void Overlay_Toggle(OverlayWindow) {}
 inline void Overlay_JournalAdd(int, uint16_t, const astr_t &) {}
 inline bool Overlay_LoginActive() { return false; }
+inline void Overlay_LoginRunPending() {}
 
 #endif

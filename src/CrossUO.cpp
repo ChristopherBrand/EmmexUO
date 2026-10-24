@@ -624,6 +624,11 @@ void CGame::Uninstall()
 void CGame::InitScreen(GAME_STATE state)
 {
     g_GameState = state;
+    if (state >= GS_SERVER && state <= GS_GAME_CONNECT)
+    {
+        // past the login screen (and its connecting state), the screens are classic gumps
+        CMainScreen::UseClassicWindow();
+    }
     g_SelectedObject.Clear();
     g_LastSelectedObject.Clear();
     g_PressedObject.ClearAll();

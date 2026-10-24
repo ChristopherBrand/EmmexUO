@@ -54,6 +54,7 @@ int CApplication::Run()
         }
 
         // 2] Run main loop, packets, rendering etc..
+        Overlay_LoginRunPending();
         OnMainLoop();
 
         // 3] Calculate proper delay based on settings and frame time.

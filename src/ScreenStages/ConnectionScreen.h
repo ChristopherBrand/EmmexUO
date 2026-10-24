@@ -63,6 +63,10 @@ public:
     static const uint8_t ID_SMOOTH_CS_GO_SCREEN_PROFESSION = 3;
     static const uint8_t ID_SMOOTH_CS_SEND_DELETE = 4;
 
+    // Login (CST_LOGIN) status or error text: "Connecting...", "Verifying Account..." or why
+    // the login server refused.
+    astr_t LoginMessage() const;
+
     virtual void Init() override;
     virtual void ProcessSmoothAction(uint8_t action = 0xFF) override;
     virtual void OnKeyDown(const KeyEvent &ev) override;

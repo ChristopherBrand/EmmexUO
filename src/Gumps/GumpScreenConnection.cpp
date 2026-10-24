@@ -191,45 +191,13 @@ void CGumpScreenConnection::UpdateContent()
     }
     else
     {
+        CreateText(189, 178, g_ConnectionScreen.LoginMessage(), 2);
         if (g_ConnectionScreen.GetConnectionFailed())
         {
-            const astr_t text[9] = {
-                g_ClilocManager.Cliloc(g_Language)
-                    ->GetA(3000007, false, "Incorrect name/password."),
-                g_ClilocManager.Cliloc(g_Language)
-                    ->GetA(3000034, false, "Someone is already using this account."),
-                g_ClilocManager.Cliloc(g_Language)
-                    ->GetA(3000035, false, "Your account has been blocked."),
-                g_ClilocManager.Cliloc(g_Language)
-                    ->GetA(3000036, false, "Your account credentials are invalid."),
-                "Communication problem.",
-                "The IGR concurrency limit has been met.",
-                "The IGR time limit has been met.",
-                "General IGR authentication failure.",
-                g_ClilocManager.Cliloc(g_Language)
-                    ->GetA(
-                        3000037,
-                        false,
-                        "Couldn't connect to Ultima Online.  Please try again in a few moments.")
-            };
-            int index = g_ConnectionScreen.GetErrorCode();
-            if (index >= 9)
-            {
-                index = 8;
-            }
-            CreateText(189, 178, text[index], 2);
-
             Add(new CGUIButton(ID_CS_OK, 0x0481, 0x0482, 0x0483, 306, 304));
         }
         else
         {
-            const astr_t text[2] = {
-                g_ClilocManager.Cliloc(g_Language)->GetA(3000002, false, "Connecting..."),
-                g_ClilocManager.Cliloc(g_Language)->GetA(3000003, false, "Verifying Account...")
-            };
-
-            CreateText(189, 178, text[g_ConnectionScreen.GetConnected()], 2);
-
             g_ConnectionScreen.CursorGraphic = 0x2077; //Waiting mouse cursor
         }
     }

@@ -20,6 +20,7 @@
 #include "../Globals.h"
 #include "../Managers/ColorManager.h"
 #include "../Managers/ConfigManager.h"
+#include "../ScreenStages/ConnectionScreen.h"
 
 static SDL_Window *s_window = nullptr;
 static bool s_initialized = false;
@@ -38,7 +39,15 @@ ImFont *Overlay_LoginFont(LoginFont font)
 // The modern login screen stands in for the classic main gump.
 bool Overlay_LoginActive()
 {
-    return s_initialized && g_GameState == GS_MAIN;
+    if (!s_initialized)
+    {
+        return false;
+    }
+    // connecting to the login server (and "connection lost") show in the login card too
+    const bool connecting = g_GameState == GS_MAIN_CONNECT &&
+                            (g_ConnectionScreen.GetType() == CST_LOGIN ||
+                             g_ConnectionScreen.GetType() == CST_CONLOST);
+    return g_GameState == GS_MAIN || connecting;
 }
 
 bool &Overlay_Visible(OverlayWindow w)

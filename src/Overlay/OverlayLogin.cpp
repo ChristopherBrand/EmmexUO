@@ -12,6 +12,7 @@
 #include "OverlayPanels.h"
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <string>
 #include <external/gfx/imgui/imgui.h>
 #include <external/gfx/imgui/imgui_stdlib.h>
@@ -25,6 +26,9 @@
 #include "../Managers/ScreenEffectManager.h"
 #include "../Renderer/RenderAPI.h"
 #include "../ScreenStages/MainScreen.h"
+#include "../ScreenStages/ConnectionScreen.h"
+#include "../Managers/ConnectionManager.h"
+#include "../CrossUO.h"
 #include "../TextEngine/EntryText.h"
 #include "revision.h" // after Config.h: its CLIENT_VERSION macro clashes with an enum name
 
@@ -260,6 +264,25 @@ static void sync_from_model()
     }
 }
 
+// Screen changes requested from the login scene run from the main loop, between frames:
+// connecting renders a frame of its own, which can't happen inside an overlay frame.
+static std::function<void()> s_pending;
+
+static void later(std::function<void()> action)
+{
+    s_pending = std::move(action);
+}
+
+void Overlay_LoginRunPending()
+{
+    if (s_pending)
+    {
+        auto action = std::move(s_pending);
+        s_pending = nullptr;
+        action();
+    }
+}
+
 static bool busy()
 {
     return g_MainScreen.SmoothScreenAction != 0 || g_ScreenEffectManager.Mode != SEM_NONE;
@@ -273,11 +296,11 @@ static void login()
     }
     if (LoginServers_NeedsRestart())
     {
-        LoginServers_Restart();
+        later(LoginServers_Restart);
         return;
     }
     LoginServers_Save(); // remembers this server's account
-    g_MainScreen.CreateSmoothAction(CMainScreen::ID_SMOOTH_MS_CONNECT);
+    later([] { g_MainScreen.CreateSmoothAction(CMainScreen::ID_SMOOTH_MS_CONNECT); });
 }
 
 // Text link: muted until hovered, then gold and underlined.
@@ -300,6 +323,158 @@ static bool link(const char *label, const char *tooltip)
         }
     }
     return pressed;
+}
+
+// Draws text wrapped to a width, each line centred; returns the height used.
+static float text_wrapped_centered(ImDrawList *dl, ImFont *font, float x0, float width, float y, ImU32 col, const char *text)
+{
+    const float size = px(font);
+    const char *line = text;
+    const char *end = text + strlen(text);
+    float h = 0;
+    while (line < end)
+    {
+        const char *wrap = font->CalcWordWrapPositionA(size / font->FontSize, line, end, width);
+        if (wrap == line)
+        {
+            wrap++;
+        }
+        const char *next = wrap;
+        while (next < end && (*next == ' ' || *next == '\n'))
+        {
+            next++;
+        }
+        const float lw = font->CalcTextSizeA(size, FLT_MAX, 0.f, line, wrap).x;
+        dl->AddText(font, size, ImVec2(floorf(x0 + (width - lw) / 2), y + h), col, line, wrap);
+        h += size * 1.35f;
+        line = next;
+    }
+    return h;
+}
+
+static void spinner(ImDrawList *dl, const ImVec2 &c, float r, float thick)
+{
+    const float t = float(ImGui::GetTime());
+    dl->AddCircle(c, r, IM_COL32(255, 255, 255, 30), 48, thick);
+    const float a0 = t * 4.2f;
+    const float sweep = 1.6f + 0.9f * sinf(t * 2.1f);
+    dl->PathArcTo(c, r, a0, a0 + sweep, 32);
+    dl->PathStroke(COL_GOLD, false, thick);
+}
+
+static void alert_icon(ImDrawList *dl, const ImVec2 &c, float r, ImU32 col, float u)
+{
+    dl->AddCircle(c, r, col, 48, 2.f * u);
+    dl->AddLine(ImVec2(c.x, c.y - r * 0.45f), ImVec2(c.x, c.y + r * 0.12f), col, 2.4f * u);
+    dl->AddCircleFilled(ImVec2(c.x, c.y + r * 0.42f), 1.8f * u, col, 12);
+}
+
+static bool card_button(const char *label, const ImVec2 &size, bool primary)
+{
+    if (primary)
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(COL_GOLD));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.91f, 0.77f, 0.50f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.74f, 0.59f, 0.33f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.10f, 0.08f, 0.05f, 1.f));
+    }
+    else
+    {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.f, 1.f, 1.f, 0.08f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.f, 1.f, 1.f, 0.14f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.f, 1.f, 1.f, 0.20f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(COL_TEXT));
+    }
+    const bool pressed = ImGui::Button(label, size);
+    ImGui::PopStyleColor(4);
+    return pressed;
+}
+
+static void back_to_login()
+{
+    later([] {
+        g_ConnectionScreen.CreateSmoothAction(CConnectionScreen::ID_SMOOTH_CS_GO_SCREEN_MAIN);
+    });
+}
+
+// The card while connecting to the login server: progress, or why it failed.
+static void draw_status(const ImVec2 &pos, float width, float height, float pad, float u)
+{
+    ImFont *body = Overlay_LoginFont(LoginFont::Body);
+    ImFont *small = Overlay_LoginFont(LoginFont::Small);
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+    const bool lost = g_ConnectionScreen.GetType() == CST_CONLOST;
+    const bool failed = g_ConnectionScreen.GetConnectionFailed();
+    const bool waiting = !lost && !failed;
+    const float innerW = width - pad * 2;
+
+    // which server, at the top
+    const auto &servers = LoginServers_List();
+    const int active = LoginServers_Active();
+    if (active >= 0 && active < int(servers.size()))
+    {
+        std::string label = LoginServers_DisplayName(servers[active]);
+        std::transform(label.begin(), label.end(), label.begin(), ::toupper);
+        text_wrapped_centered(dl, small, pos.x + pad, innerW, pos.y + pad, COL_MUTED, label.c_str());
+    }
+
+    // icon and message, centred in the space above the buttons
+    const float buttonH = px(body) + 22.f * u;
+    const float iconR = 22.f * u;
+    const ImVec2 iconC(pos.x + width / 2, pos.y + height * 0.32f);
+    if (waiting)
+    {
+        spinner(dl, iconC, iconR, 3.f * u);
+    }
+    else
+    {
+        alert_icon(dl, iconC, iconR, lost ? COL_MUTED : IM_COL32(248, 113, 113, 255), u);
+    }
+    const astr_t message = lost ? astr_t("Connection lost") : g_ConnectionScreen.LoginMessage();
+    text_wrapped_centered(
+        dl, body, pos.x + pad, innerW, iconC.y + iconR + 18.f * u, COL_TEXT, message.c_str());
+
+    // buttons along the bottom, where Log In was
+    ImGui::PushFont(body);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.f * u);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12.f * u, 11.f * u));
+    ImGui::SetCursorScreenPos(ImVec2(pos.x + pad, pos.y + height - pad - buttonH));
+    const ImGuiIO &io = ImGui::GetIO();
+    const bool enter = ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_Enter], false);
+    const bool escape = ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_Escape], false);
+    if (waiting)
+    {
+        if (card_button("Cancel", ImVec2(innerW, buttonH), false) || escape)
+        {
+            later([] {
+                g_ConnectionManager.Disconnect();
+                g_ConnectionScreen.CreateSmoothAction(CConnectionScreen::ID_SMOOTH_CS_GO_SCREEN_MAIN);
+            });
+        }
+    }
+    else if (lost)
+    {
+        if (card_button("Back to Login", ImVec2(innerW, buttonH), true) || enter || escape)
+        {
+            back_to_login();
+        }
+    }
+    else
+    {
+        const float gap = 10.f * u;
+        const float half = (innerW - gap) / 2;
+        if (card_button("Back", ImVec2(half, buttonH), false) || escape)
+        {
+            back_to_login();
+        }
+        ImGui::SameLine(0, gap);
+        if (card_button("Try Again", ImVec2(half, buttonH), true) || enter)
+        {
+            later([] { g_Game.Connect(); });
+        }
+    }
+    ImGui::PopStyleVar(2);
+    ImGui::PopFont();
 }
 
 static void draw_card(const ImVec2 &display, float x0, float contentW, float u)
@@ -329,6 +504,12 @@ static void draw_card(const ImVec2 &display, float x0, float contentW, float u)
         IM_COL32(255, 255, 255, 0),
         IM_COL32(255, 255, 255, 0));
     dl->AddRect(pos, end, IM_COL32(255, 255, 255, 38), r, ImDrawCornerFlags_All, 1.f);
+
+    if (g_GameState == GS_MAIN_CONNECT)
+    {
+        draw_status(pos, width, height, pad, u);
+        return;
+    }
 
     ImGui::SetCursorScreenPos(ImVec2(pos.x + pad, pos.y + pad));
     ImGui::BeginGroup();
@@ -499,7 +680,7 @@ static void draw_footer(const ImVec2 &display, float u)
         display.x - margin - quitSize.x, display.y - margin - lineH - px(body) - 10.f * u));
     if (link(quit, "Quit Ultima Online"))
     {
-        g_MainScreen.CreateSmoothAction(CMainScreen::ID_SMOOTH_MS_QUIT);
+        later([] { g_MainScreen.ProcessSmoothAction(CMainScreen::ID_SMOOTH_MS_QUIT); });
     }
     ImGui::PopFont();
 
@@ -953,7 +1134,7 @@ static void draw_server_panel(const ImVec2 &display, float panelW, float ease, f
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.10f, 0.08f, 0.05f, 1.f));
         if (ImGui::Button(restart, ImVec2(rw, 0)) && !busy())
         {
-            LoginServers_Restart();
+            later(LoginServers_Restart);
         }
         ImGui::PopStyleColor(4);
         y += bannerH + 14.f * u;
@@ -1063,7 +1244,11 @@ void Overlay_DrawLogin()
 
     draw_card(display, x0, contentW, u);
     draw_footer(display, u);
-    if (s_panelT < 0.5f)
+    if (g_GameState == GS_MAIN_CONNECT)
+    {
+        s_panelOpen = false; // no switching servers mid-connection
+    }
+    else if (s_panelT < 0.5f)
     {
         draw_server_pill(u);
     }

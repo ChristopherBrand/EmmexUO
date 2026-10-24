@@ -6,7 +6,8 @@
 #include "../CharacterList.h"
 #include "../Managers/ScreenEffectManager.h"
 #include "../Network/Packets.h"
-#include "MainScreen.h"
+#include "../Managers/ClilocManager.h"
+#include "../Globals.h" // g_Language
 
 CConnectionScreen g_ConnectionScreen;
 
@@ -22,11 +23,6 @@ CConnectionScreen::~CConnectionScreen()
 void CConnectionScreen::Init()
 {
     CBaseScreen::Init();
-    if (g_GameState == GS_MAIN_CONNECT)
-    {
-        // leaving the resizable login screen for the fixed-size classic screens
-        CMainScreen::UseClassicWindow();
-    }
     m_Text = "";
     m_ConnectionFailed = false;
     m_Connected = false;
@@ -39,6 +35,42 @@ void CConnectionScreen::Init()
 
     m_Gump.PrepareTextures();
     m_Gump.WantUpdateContent = true;
+}
+
+astr_t CConnectionScreen::LoginMessage() const
+{
+    if (!m_Text.empty())
+    {
+        return m_Text;
+    }
+    auto cliloc = g_ClilocManager.Cliloc(g_Language);
+    if (!m_ConnectionFailed)
+    {
+        return m_Connected ? cliloc->GetA(3000003, false, "Verifying Account...") :
+                             cliloc->GetA(3000002, false, "Connecting...");
+    }
+    switch (m_ErrorCode)
+    {
+        case 0:
+            return cliloc->GetA(3000007, false, "Incorrect name/password.");
+        case 1:
+            return cliloc->GetA(3000034, false, "Someone is already using this account.");
+        case 2:
+            return cliloc->GetA(3000035, false, "Your account has been blocked.");
+        case 3:
+            return cliloc->GetA(3000036, false, "Your account credentials are invalid.");
+        case 4:
+            return "Communication problem.";
+        case 5:
+            return "The IGR concurrency limit has been met.";
+        case 6:
+            return "The IGR time limit has been met.";
+        case 7:
+            return "General IGR authentication failure.";
+        default:
+            return cliloc->GetA(
+                3000037, false, "Couldn't connect to Ultima Online.  Please try again in a few moments.");
+    }
 }
 
 void CConnectionScreen::SetConnectionFailed(bool val)
