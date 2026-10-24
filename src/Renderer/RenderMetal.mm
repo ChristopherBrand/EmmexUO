@@ -937,6 +937,36 @@ void Render_OverlayDraw(ImDrawData *drawData)
     [enc endEncoding];
 }
 
+void *Render_OverlayCreateImage(int width, int height, const uint8_t *rgba)
+{
+    MTLTextureDescriptor *desc =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                           width:NSUInteger(width)
+                                                          height:NSUInteger(height)
+                                                       mipmapped:NO];
+    desc.usage = MTLTextureUsageShaderRead;
+    id<MTLTexture> tex = [m.device newTextureWithDescriptor:desc];
+    if (tex == nil)
+    {
+        return nullptr;
+    }
+    [tex replaceRegion:MTLRegionMake2D(0, 0, NSUInteger(width), NSUInteger(height))
+           mipmapLevel:0
+             withBytes:rgba
+           bytesPerRow:NSUInteger(width) * 4];
+    // ImGui only holds a raw pointer; the reference is released in Render_OverlayDestroyImage
+    return (__bridge_retained void *)tex;
+}
+
+void Render_OverlayDestroyImage(void *image)
+{
+    if (image != nullptr)
+    {
+        id<MTLTexture> tex = (__bridge_transfer id<MTLTexture>)image;
+        tex = nil;
+    }
+}
+
 // ---------------------------------------------------------------------------------------
 // Resources
 

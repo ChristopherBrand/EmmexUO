@@ -962,6 +962,31 @@ void Render_OverlayDraw(ImDrawData *drawData)
     ImGui_ImplOpenGL3_RenderDrawData(drawData);
 }
 
+void *Render_OverlayCreateImage(int width, int height, const uint8_t *rgba)
+{
+    GLuint tex = 0;
+    GL_CHECK(glGenTextures(1, &tex));
+    GL_CHECK(glBindTexture(GL_TEXTURE_2D, tex));
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+    GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+    GL_CHECK(glPixelStorei(GL_UNPACK_ALIGNMENT, 1));
+    GL_CHECK(glTexImage2D(
+        GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba));
+    GL_CHECK(glBindTexture(GL_TEXTURE_2D, 0));
+    return (void *)(intptr_t)tex;
+}
+
+void Render_OverlayDestroyImage(void *image)
+{
+    GLuint tex = (GLuint)(intptr_t)image;
+    if (tex != 0)
+    {
+        GL_CHECK(glDeleteTextures(1, &tex));
+    }
+}
+
 void RenderBackend_Draw(RenderPrimitive primitive, int first, int count, RenderState *state)
 {
     (void)state;

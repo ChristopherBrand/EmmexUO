@@ -236,7 +236,10 @@ bool CWindow::Create(const char *title, bool showCursor, int width, int height)
         gmask,
         bmask,
         amask);
+#if !defined(__APPLE__)
+    // on macOS this replaces the Dock icon; the app bundle's icon is the one to show
     SDL_SetWindowIcon(m_window, icon);
+#endif
     SDL_FreeSurface(icon);
 
     SDL_SysWMinfo info;

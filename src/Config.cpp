@@ -362,6 +362,11 @@ static fs_path GetConfigFile()
     return fs_path_from(g_cli["config"].get().string);
 }
 
+fs_path GetConfigFilePath()
+{
+    return GetConfigFile();
+}
+
 bool LoadGlobalConfig()
 {
     auto cfg = GetConfigFile();

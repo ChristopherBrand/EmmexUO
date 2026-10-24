@@ -234,6 +234,37 @@ void CGump::CalculateGumpState()
     }
 }
 
+static void ScrollComboList(CGUIComboBox *combo, CGump *gump)
+{
+    if (combo->ListingTimer < g_Ticks)
+    {
+        int index = combo->StartIndex;
+        int direction = combo->ListingDirection;
+
+        if (direction == 1 && index > 0)
+        {
+            index--;
+        }
+        else if (direction == 2 && index + 1 < combo->GetItemsCount())
+        {
+            index++;
+        }
+
+        if (index != combo->StartIndex)
+        {
+            if (index < 0)
+            {
+                index = 0;
+            }
+
+            combo->StartIndex = index;
+            gump->WantRedraw = true;
+        }
+
+        combo->ListingTimer = g_Ticks + 50;
+    }
+}
+
 void CGump::ProcessListing()
 {
     if (g_PressedObject.LeftGump != nullptr && !g_PressedObject.LeftGump->NoProcess &&
@@ -269,36 +300,14 @@ void CGump::ProcessListing()
         }
         else if (item->Type == GOT_COMBOBOX)
         {
-            CGUIComboBox *combo = (CGUIComboBox *)item;
-
-            if (combo->ListingTimer < g_Ticks)
-            {
-                int index = combo->StartIndex;
-                int direction = combo->ListingDirection;
-
-                if (direction == 1 && index > 0)
-                {
-                    index--;
-                }
-                else if (direction == 2 && index + 1 < combo->GetItemsCount())
-                {
-                    index++;
-                }
-
-                if (index != combo->StartIndex)
-                {
-                    if (index < 0)
-                    {
-                        index = 0;
-                    }
-
-                    combo->StartIndex = index;
-                    g_PressedObject.LeftGump->WantRedraw = true;
-                }
-
-                combo->ListingTimer = g_Ticks + 50;
-            }
+            ScrollComboList((CGUIComboBox *)item, g_PressedObject.LeftGump);
         }
+    }
+    else if (CGUIComboBox::Opened != nullptr && CGUIComboBox::OpenedGump != nullptr)
+    {
+        // hover highlight follows the mouse while no button is held
+        CGUIComboBox::OpenedGump->WantRedraw = true;
+        ScrollComboList(CGUIComboBox::Opened, CGUIComboBox::OpenedGump);
     }
 }
 
@@ -379,7 +388,7 @@ void CGump::DrawItems(CBaseGUI *start, int currentPage, int pageAmount)
                 }
                 case GOT_COMBOBOX:
                 {
-                    if (g_PressedObject.LeftObject == item)
+                    if (((CGUIComboBox *)item)->IsOpen())
                     {
                         combo = (CGUIComboBox *)item;
                         break;
@@ -521,7 +530,7 @@ CRenderObject *CGump::SelectItems(CBaseGUI *start, int currentPage, int pageAmou
                 }
                 case GOT_COMBOBOX:
                 {
-                    if (g_PressedObject.LeftObject == item)
+                    if (((CGUIComboBox *)item)->IsOpen())
                     {
                         combo = (CGUIComboBox *)item;
                     }

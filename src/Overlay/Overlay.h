@@ -31,6 +31,8 @@ void Overlay_Render();
 void Overlay_Toggle(OverlayWindow w);
 // Mirrors a journal line (UTF-8) into the overlay's longer, searchable history.
 void Overlay_JournalAdd(int textType, uint16_t hue, const astr_t &utf8);
+// True while the overlay draws the login screen in place of the classic main gump.
+bool Overlay_LoginActive();
 
 #else
 
@@ -40,5 +42,6 @@ inline bool Overlay_ProcessEvent(const SDL_Event &) { return false; }
 inline void Overlay_Render() {}
 inline void Overlay_Toggle(OverlayWindow) {}
 inline void Overlay_JournalAdd(int, uint16_t, const astr_t &) {}
+inline bool Overlay_LoginActive() { return false; }
 
 #endif

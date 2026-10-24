@@ -18,6 +18,9 @@
 #include "../Managers/GumpManager.h"
 #include "../GUI/GUITextEntry.h"
 #include "../TextEngine/EntryText.h"
+#include "../Overlay/Overlay.h"
+#include "../LoginServers.h"
+#include <algorithm>
 
 CMainScreen g_MainScreen;
 
@@ -42,6 +45,8 @@ void CMainScreen::Init()
     g_ConfigLoaded = false;
     g_GlobalScale = 1.0;
     Load();
+    // after Load: the server list reads and writes the account shown on the login card
+    LoginServers_Init();
     Reset();
     g_GameWindow.SetTitle(CLIENT_TITLE);
 #ifndef NEW_RENDERER_ENABLED
@@ -63,6 +68,28 @@ void CMainScreen::Init()
 
 void CMainScreen::Reset() const
 {
+    g_GameWindow.RestoreWindow();
+    if (Overlay_LoginActive())
+    {
+        // the modern login screen lays itself out for any window size: open at 1280x800
+        // points, or 90% of a smaller display (GetDisplaySize is in logical units)
+        int dw = 1280;
+        int dh = 800;
+        GetDisplaySize(&dw, &dh);
+        const int w = std::min(1280, g_GameWindow.ToOS(dw) * 9 / 10);
+        const int h = std::min(800, g_GameWindow.ToOS(dh) * 9 / 10);
+        g_GameWindow.SetWindowResizable(true);
+        g_GameWindow.SetSize(CSize(g_GameWindow.ToLogical(w), g_GameWindow.ToLogical(h)));
+        SDL_SetWindowPosition(
+            g_GameWindow.m_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+        return;
+    }
+    UseClassicWindow();
+}
+
+void CMainScreen::UseClassicWindow()
+{
+    // the classic screens are a fixed 640x480 layout
     g_GameWindow.RestoreWindow();
     g_GameWindow.SetSize(CSize(640, 480));
     g_GameWindow.SetWindowResizable(false);

@@ -42,5 +42,7 @@ struct Config
 
 bool LoadGlobalConfig();
 void SaveGlobalConfig();
+// The config file in use (--config, next to the client, or in the app data folder).
+fs_path GetConfigFilePath();
 
 extern Config g_Config;

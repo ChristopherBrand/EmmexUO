@@ -10,6 +10,10 @@
 #include "../Managers/MouseManager.h"
 #include "../Renderer/RenderAPI.h"
 #include "../Utility/PerfMarker.h"
+#include "../Gumps/Gump.h"
+
+CGUIComboBox *CGUIComboBox::Opened = nullptr;
+CGump *CGUIComboBox::OpenedGump = nullptr;
 
 CGUIComboBox::CGUIComboBox(
     int serial,
@@ -62,11 +66,40 @@ CGUIComboBox::CGUIComboBox(
 
 CGUIComboBox::~CGUIComboBox()
 {
+    if (Opened == this)
+    {
+        Opened = nullptr;
+        OpenedGump = nullptr;
+    }
+
     if (Text != nullptr)
     {
         delete Text;
         Text = nullptr;
     }
+}
+
+bool CGUIComboBox::IsOpen() const
+{
+    return Opened == this || g_PressedObject.LeftObject == this;
+}
+
+void CGUIComboBox::Open(CGump *gump)
+{
+    Close();
+    Opened = this;
+    OpenedGump = gump;
+    gump->WantRedraw = true;
+}
+
+void CGUIComboBox::Close()
+{
+    if (OpenedGump != nullptr)
+    {
+        OpenedGump->WantRedraw = true;
+    }
+    Opened = nullptr;
+    OpenedGump = nullptr;
 }
 
 void CGUIComboBox::RecalculateWidth()
@@ -155,7 +188,7 @@ void CGUIComboBox::Draw(bool checktrans)
         Text->m_Texture.Draw(m_X + Text->GetX(), m_Y + Text->GetY() + TextOffsetY, checktrans);
     }
 
-    if (g_PressedObject.LeftObject == this) //maximized
+    if (IsOpen()) //maximized
     {
         int currentX = m_X + 3;
         int currentY = m_Y + 3;
@@ -323,7 +356,7 @@ bool CGUIComboBox::Select()
     ListingDirection = 0;
     bool select = false;
 
-    if (g_PressedObject.LeftObject == this) //maximized
+    if (IsOpen()) //maximized
     {
         int currentX = m_X + 3;
         int currentY = m_Y + 3;
@@ -379,7 +412,7 @@ CBaseGUI *CGUIComboBox::SelectedItem()
 {
     CBaseGUI *select = this;
 
-    if (g_PressedObject.LeftObject == this) //maximized
+    if (IsOpen()) //maximized
     {
         int currentX = m_X + 3;
         int currentY = m_Y + 3;
@@ -427,7 +460,7 @@ int CGUIComboBox::IsSelectedItem()
 {
     int select = -1;
 
-    if (g_PressedObject.LeftObject == this) //maximized
+    if (IsOpen()) //maximized
     {
         CBaseGUI *start = SkipToStart();
         int count = 0;

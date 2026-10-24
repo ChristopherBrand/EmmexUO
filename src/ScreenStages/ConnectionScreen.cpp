@@ -6,6 +6,7 @@
 #include "../CharacterList.h"
 #include "../Managers/ScreenEffectManager.h"
 #include "../Network/Packets.h"
+#include "MainScreen.h"
 
 CConnectionScreen g_ConnectionScreen;
 
@@ -21,6 +22,11 @@ CConnectionScreen::~CConnectionScreen()
 void CConnectionScreen::Init()
 {
     CBaseScreen::Init();
+    if (g_GameState == GS_MAIN_CONNECT)
+    {
+        // leaving the resizable login screen for the fixed-size classic screens
+        CMainScreen::UseClassicWindow();
+    }
     m_Text = "";
     m_ConnectionFailed = false;
     m_Connected = false;

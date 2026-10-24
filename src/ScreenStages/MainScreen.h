@@ -45,6 +45,8 @@ public:
 
     void Save();
     void Reset() const;
+    // Back to the fixed 640x480 window the classic (gump) screens are laid out for.
+    static void UseClassicWindow();
 };
 
 extern CMainScreen g_MainScreen;

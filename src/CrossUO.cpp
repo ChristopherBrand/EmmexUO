@@ -160,6 +160,7 @@
 
 #include <external/popts.h>
 #include "Renderer/RenderAPI.h"
+#include "LoginServers.h"
 
 extern po::parser g_cli;
 
@@ -339,6 +340,12 @@ bool CGame::Install()
     Info(Client, "loading files");
     if (!g_FileManager.Load())
     {
+        // opened directly with no game data yet (first run): the launcher sets it up
+        if (!g_cli["config"].was_set() && LoginServers_OpenLauncher())
+        {
+            Info(Client, "no game data; opening the launcher to set it up");
+            return false;
+        }
         auto errMsg =
             astr_t(
                 "Error loading a memmapped file. Please check the log for more info.\nUsing UO search path: ") +
@@ -580,6 +587,8 @@ void CGame::Uninstall()
     SaveLocalConfig(g_PacketManager.ConfigSerial);
     g_MainScreen.Save();
     SaveGlobalConfig();
+    LoginServers_Save();
+    LoginServers_Shutdown();
     g_GumpManager.OnDelete();
 
     Disconnect();

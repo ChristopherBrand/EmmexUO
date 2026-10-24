@@ -22,7 +22,6 @@ enum
     ID_MS_UOACCOUNT,
     ID_MS_UOCOM,
     ID_MS_HELP,
-    ID_MS_MOVIE,
     ID_MS_CREDITS,
 
     ID_MS_COUNT,
@@ -157,13 +156,8 @@ void CGumpScreenMain::UpdateContent()
 
         //Help Button
         Add(new CGUIButton(ID_MS_HELP, 0x5D3, 0x5D1, 0x5D2, 530, 35));
-        //Movie button
-        Add(new CGUIButton(ID_MS_MOVIE, 0x5D6, 0x5D4, 0x5D5, 530, 80));
         //Credit button
-        Add(new CGUIButton(ID_MS_CREDITS, 0x5D0, 0x5CE, 0x5CF, 530, 125));
-
-        //TEEN RATING
-        Add(new CGUIGumppic(0x2335, 30, 380));
+        Add(new CGUIButton(ID_MS_CREDITS, 0x5D0, 0x5CE, 0x5CF, 530, 80));
 
         Add(new CGUIResizepic(ID_MS_ACCOUNT, 0x0BB8, 220, 280, 210, 30));
         Add(new CGUIResizepic(ID_MS_PASSWORD, 0x0BB8, 220, 335, 210, 30));
@@ -266,17 +260,13 @@ void CGumpScreenMain::GUMP_BUTTON_EVENT_C
         }
         case ID_MS_HELP:
         {
-            Platform::OpenBrowser("https://crossuo.com/");
-            break;
-        }
-        case ID_MS_MOVIE:
-        {
-            Platform::OpenBrowser("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+            Platform::OpenBrowser("https://github.com/ChristopherBrand/EmmexUO");
             break;
         }
         case ID_MS_CREDITS:
         {
-            Platform::OpenBrowser("https://github.com/crossuo/crossuo/graphs/contributors");
+            Platform::OpenBrowser(
+                "https://github.com/ChristopherBrand/EmmexUO/graphs/contributors");
             break;
         }
         default:

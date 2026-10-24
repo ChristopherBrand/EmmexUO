@@ -23,6 +23,8 @@
 #include "ScreenStages/MainScreen.h"
 #include "ScreenStages/ServerScreen.h"
 #include "Gumps/Gump.h"
+#include "GUI/GUIComboBox.h"
+#include "Overlay/Overlay.h"
 #include "Walker/PathFinder.h"
 
 #if !defined(NEW_RENDERER_ENABLED) || defined(RENDERER_LEGACY)
@@ -146,6 +148,9 @@ int CGameWindow::GetRenderDelay()
     return m_iRenderDelay;
 }
 
+// the click that picked from (or dismissed) an opened combo box is not passed on
+static bool s_SwallowLeftMouseUp = false;
+
 void CGameWindow::OnLeftMouseButtonDown()
 {
     if (g_CurrentScreen != nullptr && g_ScreenEffectManager.Mode == SEM_NONE)
@@ -155,6 +160,23 @@ void CGameWindow::OnLeftMouseButtonDown()
         {
             g_CurrentScreen->SelectObject();
         }
+
+        if (CGUIComboBox::Opened != nullptr)
+        {
+            CGUIComboBox *combo = CGUIComboBox::Opened;
+            CGump *gump = CGUIComboBox::OpenedGump;
+            const int index = combo->IsSelectedItem();
+            CGUIComboBox::Close();
+            if (index != -1)
+            {
+                combo->SelectedIndex = index;
+                gump->OnComboboxSelection(combo->Serial + index);
+                gump->WantRedraw = true;
+            }
+            s_SwallowLeftMouseUp = true;
+            return;
+        }
+
         g_PressedObject.InitLeft(g_SelectedObject);
         if (g_SelectedObject.Object != nullptr || g_GameState == GS_GAME)
         {
@@ -165,11 +187,33 @@ void CGameWindow::OnLeftMouseButtonDown()
 
 void CGameWindow::OnLeftMouseButtonUp()
 {
+    if (s_SwallowLeftMouseUp)
+    {
+        s_SwallowLeftMouseUp = false;
+        return;
+    }
+
     if (g_CurrentScreen != nullptr && g_ScreenEffectManager.Mode == SEM_NONE)
     {
         if (g_Target.MultiGraphic == 0)
         {
             g_CurrentScreen->SelectObject();
+        }
+
+        // a click (press and release without moving) leaves the list open;
+        // press-drag-release still picks the item under the cursor
+        if (g_PressedObject.LeftObject != nullptr && g_PressedObject.LeftObject->IsGUI() &&
+            ((CBaseGUI *)g_PressedObject.LeftObject)->Type == GOT_COMBOBOX &&
+            g_PressedObject.LeftGump != nullptr)
+        {
+            const CPoint2Di &down = g_MouseManager.LeftDropPosition;
+            const CPoint2Di &pos = g_MouseManager.Position;
+            if (std::abs(pos.X - down.X) <= 3 && std::abs(pos.Y - down.Y) <= 3)
+            {
+                ((CGUIComboBox *)g_PressedObject.LeftObject)->Open(g_PressedObject.LeftGump);
+                g_PressedObject.ClearLeft();
+                return;
+            }
         }
         //if ((g_SelectedObject.Object() != nullptr && g_SelectedObject.Object() == g_PressedObject.LeftObject && g_SelectedObject.Serial) || g_GameState >= GS_GAME)
         if ((g_SelectedObject.Object != nullptr && (g_SelectedObject.Serial != 0u)) ||
@@ -196,6 +240,12 @@ void CGameWindow::OnLeftMouseButtonUp()
 bool CGameWindow::OnLeftMouseButtonDoubleClick()
 {
     bool result = false;
+
+    // a quick second click picks from the opened combo box in OnLeftMouseButtonDown
+    if (CGUIComboBox::Opened != nullptr)
+    {
+        return result;
+    }
 
     if (g_CurrentScreen != nullptr && g_ScreenEffectManager.Mode == SEM_NONE)
     {
@@ -407,12 +457,13 @@ void CGameWindow::OnKeyDown(const KeyEvent &ev)
         {
             const float step = (key == SDLK_MINUS || key == SDLK_KP_MINUS) ? -0.25f : 0.25f;
             g_Config.UIScale = std::min(std::max(UIScale + step, 1.f), 4.f);
-            SetUIScale(g_Config.UIScale, g_GameState >= GS_GAME);
+            SetUIScale(g_Config.UIScale, g_GameState >= GS_GAME || Overlay_LoginActive());
             return;
         }
         if (key == SDLK_f && (mod & KMOD_CTRL) != 0)
         {
-            if (g_GameState >= GS_GAME) // the login screens are a fixed 640x480 layout
+            // the classic login screens are a fixed 640x480 layout; the modern one resizes
+            if (g_GameState >= GS_GAME || Overlay_LoginActive())
             {
                 ToggleFullscreen();
             }

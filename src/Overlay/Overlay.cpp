@@ -27,6 +27,19 @@ static bool s_visible[4] = {};
 static std::string s_iniPath;
 static float s_fontScale = 0.f; // UI scale the fonts and style were built for
 static float s_fontRetina = 0.f;
+static ImFont *s_loginFonts[3] = {};
+
+ImFont *Overlay_LoginFont(LoginFont font)
+{
+    ImFont *f = s_loginFonts[int(font)];
+    return f != nullptr ? f : ImGui::GetIO().Fonts->Fonts[0];
+}
+
+// The modern login screen stands in for the classic main gump.
+bool Overlay_LoginActive()
+{
+    return s_initialized && g_GameState == GS_MAIN;
+}
 
 bool &Overlay_Visible(OverlayWindow w)
 {
@@ -41,7 +54,7 @@ static bool shown(OverlayWindow w)
 
 static bool any_visible()
 {
-    return shown(OverlayWindow::Journal) || shown(OverlayWindow::Settings) ||
+    return Overlay_LoginActive() || shown(OverlayWindow::Journal) || shown(OverlayWindow::Settings) ||
            shown(OverlayWindow::Macros) || shown(OverlayWindow::Target);
 }
 
@@ -109,6 +122,31 @@ static void rebuild_fonts_if_needed()
         cfg.SizePixels = 13.f * float(scale) * retina;
         io.Fonts->AddFontDefault(&cfg);
     }
+
+    // login screen typefaces (bundled, SIL OFL); missing files fall back to the default font
+    struct
+    {
+        const char *file;
+        float size;
+        bool latinOnly;
+    } loginFonts[] = {
+        { "fonts/Cinzel.ttf", 50.f, true },
+        { "fonts/Inter.ttf", 15.f, false },
+        { "fonts/Inter.ttf", 12.f, false },
+    };
+    // rasterized at twice the base size: the login screen scales with its window, up to 2x
+    static const ImWchar latin[] = { 0x0020, 0x007E, 0 };
+    static const ImWchar uiRanges[] = { 0x0020, 0x017F, 0x2010, 0x2027, 0 };
+    for (int i = 0; i < 3; i++)
+    {
+        const std::string path = Overlay_ResourcePath(loginFonts[i].file);
+        s_loginFonts[i] = path.empty() ? nullptr :
+                                         io.Fonts->AddFontFromFileTTF(
+                                             path.c_str(),
+                                             loginFonts[i].size * 2.f * retina,
+                                             nullptr,
+                                             loginFonts[i].latinOnly ? latin : uiRanges);
+    }
     io.FontGlobalScale = 1.f / retina;
     Render_OverlayRebuildFonts();
     apply_style(float(scale));
@@ -143,6 +181,7 @@ void Overlay_Shutdown()
         return;
     }
     Overlay_SaveState();
+    Overlay_LoginShutdown();
     Render_OverlayShutdown();
     ImGui_ImplSDL2_Shutdown();
     ImGui::DestroyContext();
@@ -207,6 +246,34 @@ bool Overlay_ProcessEvent(const SDL_Event &e)
         return true;
     }
     ImGui_ImplSDL2_ProcessEvent(&e);
+    if (Overlay_LoginActive())
+    {
+        // the login screen is entirely overlay; the classic gump underneath gets no input,
+        // except the window shortcuts (Cmd+= / Cmd+- scale, Cmd+Ctrl+F full screen)
+        if (e.type == SDL_KEYDOWN && (e.key.keysym.mod & KMOD_GUI) != 0)
+        {
+            const auto sym = e.key.keysym.sym;
+            if (sym == SDLK_EQUALS || sym == SDLK_PLUS || sym == SDLK_KP_PLUS ||
+                sym == SDLK_MINUS || sym == SDLK_KP_MINUS ||
+                (sym == SDLK_f && (e.key.keysym.mod & KMOD_CTRL) != 0))
+            {
+                return false;
+            }
+        }
+        switch (e.type)
+        {
+            case SDL_MOUSEMOTION:
+            case SDL_MOUSEWHEEL:
+            case SDL_MOUSEBUTTONDOWN:
+            case SDL_MOUSEBUTTONUP:
+            case SDL_KEYDOWN:
+            case SDL_KEYUP:
+            case SDL_TEXTINPUT:
+                return true;
+            default:
+                return false;
+        }
+    }
     if (!any_visible())
     {
         return false;
@@ -245,6 +312,14 @@ bool Overlay_ProcessEvent(const SDL_Event &e)
 
 void Overlay_Render()
 {
+    static bool s_loginWasActive = false;
+    const bool loginActive = Overlay_LoginActive();
+    if (s_loginWasActive && !loginActive)
+    {
+        Overlay_LoginHidden();
+    }
+    s_loginWasActive = loginActive;
+
     if (!s_initialized || !any_visible())
     {
         return;
@@ -254,9 +329,13 @@ void Overlay_Render()
     ImGui_ImplSDL2_NewFrame(s_window);
     ImGui::NewFrame();
     // Software cursor over overlay windows; the game's own cursor is drawn underneath them.
-    ImGui::GetIO().MouseDrawCursor = ImGui::GetIO().WantCaptureMouse;
+    ImGui::GetIO().MouseDrawCursor = loginActive || ImGui::GetIO().WantCaptureMouse;
 
     const float scale = float(s_fontScale);
+    if (loginActive)
+    {
+        Overlay_DrawLogin();
+    }
     if (shown(OverlayWindow::Journal))
     {
         Overlay_DrawJournal(&s_visible[int(OverlayWindow::Journal)], scale);

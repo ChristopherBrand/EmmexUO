@@ -14,6 +14,7 @@
 #include <xuocore/client_info.h>
 #include <common/logging/logging.h>
 #include "Managers/ConfigManager.h"
+#include "LoginServers.h"
 
 #if !defined(XUO_WINDOWS)
 #include <dlfcn.h>
@@ -353,6 +354,7 @@ int main(int argc, char **argv)
     g_Game.LoadPlugins();
     auto ret = g_App.Run();
     SDL_Quit();
+    LoginServers_RunPendingRelaunch();
 #if defined(NEW_RENDERER_ENABLED) && (defined(USE_GL3) || defined(USE_GLES) || defined(RENDERER_LEGACY))
     gfx_render_list_destroy();
 #endif // #if defined(NEW_RENDERER_ENABLED) && (defined(USE_GL3) || defined(USE_GLES) || defined(RENDERER_LEGACY))

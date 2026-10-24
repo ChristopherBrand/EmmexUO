@@ -46,6 +46,9 @@ void Render_OverlayShutdown();
 void Render_OverlayRebuildFonts();
 void Render_OverlayNewFrame();
 void Render_OverlayDraw(ImDrawData *drawData);
+// RGBA8 image for ImGui::Image / ImDrawList::AddImage; nullptr on failure.
+void *Render_OverlayCreateImage(int width, int height, const uint8_t *rgba);
+void Render_OverlayDestroyImage(void *image);
 
 RenderState Render_DefaultState();
 void Render_ResetCmdList(RenderCmdList *cmdList, RenderState state);

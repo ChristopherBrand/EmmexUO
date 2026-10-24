@@ -83,6 +83,21 @@ public:
         bool showMaximizedCenter);
     virtual ~CGUIComboBox();
 
+    //!Combo box left open by a click (nullptr when none)
+    static CGUIComboBox *Opened;
+
+    //!Gump that owns the opened combo box
+    static class CGump *OpenedGump;
+
+    //!List is shown, either while held pressed or after a click
+    bool IsOpen() const;
+
+    //!Keep the list open after a click until an item is picked
+    void Open(class CGump *gump);
+
+    //!Close the list opened by a click
+    static void Close();
+
     //!Установить текст
     void SetText(class CGUIText *text) { Text = text; }
 

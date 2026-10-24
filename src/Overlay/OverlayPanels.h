@@ -11,6 +11,22 @@ void Overlay_DrawSettings(bool *open, float scale);
 void Overlay_DrawMacros(bool *open, float scale);
 void Overlay_DrawTarget(bool *open, float scale);
 
+// Login screen (OverlayLogin.cpp).
+#include <string>
+struct ImFont;
+enum class LoginFont
+{
+    Title,
+    Body,
+    Small,
+};
+ImFont *Overlay_LoginFont(LoginFont font);
+void Overlay_DrawLogin();
+void Overlay_LoginHidden();
+void Overlay_LoginShutdown();
+// Absolute path of a bundled resource (resources/<name>), or empty if missing.
+std::string Overlay_ResourcePath(const char *name);
+
 // Macro editor key capture: returns true if the event was used to bind a key.
 bool Overlay_MacroCaptureEvent(const SDL_Event &e);
 
