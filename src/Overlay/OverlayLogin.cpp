@@ -45,10 +45,16 @@ static const char *URL_CREDITS = "https://github.com/ChristopherBrand/EmmexUO/gr
 // the classic screen accepted at most 16 characters per field
 static const int FIELD_MAX = 16;
 
-static void *s_background = nullptr;
-static int s_backgroundW = 0;
-static int s_backgroundH = 0;
-static bool s_backgroundTried = false;
+// backdrop layers: a looping cloud strip drifting behind the castle and mountains
+struct LoginImage
+{
+    void *texture = nullptr;
+    int width = 0;
+    int height = 0;
+};
+static LoginImage s_clouds;
+static LoginImage s_foreground;
+static bool s_backdropTried = false;
 
 static char s_account[FIELD_MAX + 1];
 static char s_password[FIELD_MAX + 1];
@@ -84,66 +90,106 @@ std::string Overlay_ResourcePath(const char *name)
     return {};
 }
 
-static void load_background()
+// Loads an image, optionally taking its alpha channel from a separate greyscale file
+// (keeps the painted foreground a small JPEG instead of a large RGBA PNG).
+static LoginImage load_image(const char *name, const char *alphaName = nullptr)
 {
-    s_backgroundTried = true;
-    const std::string path = Overlay_ResourcePath("login/background.jpg");
-    if (path.empty())
-    {
-        return;
-    }
+    LoginImage image;
+    const std::string path = Overlay_ResourcePath(name);
     int w = 0, h = 0, n = 0;
-    uint8_t *pixels = stbi_load(path.c_str(), &w, &h, &n, 4);
+    uint8_t *pixels = path.empty() ? nullptr : stbi_load(path.c_str(), &w, &h, &n, 4);
     if (pixels == nullptr)
     {
-        return;
+        return image;
     }
-    s_background = Render_OverlayCreateImage(w, h, pixels);
-    s_backgroundW = w;
-    s_backgroundH = h;
+    if (alphaName != nullptr)
+    {
+        const std::string alphaPath = Overlay_ResourcePath(alphaName);
+        int aw = 0, ah = 0, an = 0;
+        uint8_t *alpha = alphaPath.empty() ? nullptr : stbi_load(alphaPath.c_str(), &aw, &ah, &an, 1);
+        if (alpha != nullptr && aw == w && ah == h)
+        {
+            for (int i = 0; i < w * h; i++)
+            {
+                pixels[i * 4 + 3] = alpha[i];
+            }
+        }
+        if (alpha != nullptr)
+        {
+            stbi_image_free(alpha);
+        }
+    }
+    image.texture = Render_OverlayCreateImage(w, h, pixels);
+    image.width = w;
+    image.height = h;
     stbi_image_free(pixels);
+    return image;
 }
 
 void Overlay_LoginShutdown()
 {
-    Render_OverlayDestroyImage(s_background);
-    s_background = nullptr;
-    s_backgroundTried = false;
+    Render_OverlayDestroyImage(s_clouds.texture);
+    Render_OverlayDestroyImage(s_foreground.texture);
+    s_clouds = {};
+    s_foreground = {};
+    s_backdropTried = false;
 }
 
-// Painted backdrop scaled to cover the window, with a slow drifting zoom.
+// Painted backdrop: the foreground covers the window with a slow drift and zoom; its sky is
+// transparent, and a seamless cloud strip scrolls behind it.
 static void draw_backdrop(ImDrawList *dl, const ImVec2 &size)
 {
-    if (!s_backgroundTried)
+    if (!s_backdropTried)
     {
-        load_background();
+        s_backdropTried = true;
+        s_clouds = load_image("login/clouds.jpg");
+        s_foreground = load_image("login/foreground.jpg", "login/foreground_alpha.png");
     }
-    dl->AddRectFilled(ImVec2(0, 0), size, IM_COL32(12, 12, 16, 255));
-    if (s_background != nullptr)
+    dl->AddRectFilled(ImVec2(0, 0), size, IM_COL32(32, 28, 48, 255));
+    const float t = float(ImGui::GetTime());
+    const float pi = 3.14159f;
+
+    // where the foreground lands: cover the window, zoomed and drifting a little
+    float rectW = size.x;
+    float rectH = size.y;
+    ImVec2 rectMin(0, 0);
+    if (s_foreground.texture != nullptr)
     {
-        const float imageAspect = float(s_backgroundW) / float(s_backgroundH);
-        const float viewAspect = size.x / std::max(1.f, size.y);
-        float u = 1.f, v = 1.f; // visible fraction of the image
-        if (viewAspect > imageAspect)
+        const float zoom = 1.f + 0.035f * (0.5f - 0.5f * cosf(t * 2.f * pi / 90.f));
+        const float scale =
+            std::max(size.x / s_foreground.width, size.y / s_foreground.height) * zoom;
+        rectW = s_foreground.width * scale;
+        rectH = s_foreground.height * scale;
+        const float drift = (rectW - size.x) * 0.25f * sinf(t * 2.f * pi / 120.f);
+        rectMin = ImVec2((size.x - rectW) / 2 + drift, (size.y - rectH) / 2);
+    }
+    // the painting's sea horizon sits a little above the middle
+    const float horizonY = rectMin.y + rectH * 0.42f;
+
+    // clouds: from the top of the window to just below the horizon, looping every ~6 minutes
+    if (s_clouds.texture != nullptr)
+    {
+        const float h = horizonY + rectH * 0.06f;
+        const float w = h * s_clouds.width / s_clouds.height;
+        const float offset = fmodf(t * w / 360.f, w);
+        for (float x = -offset; x < size.x; x += w)
         {
-            v = imageAspect / viewAspect;
+            dl->AddImage(s_clouds.texture, ImVec2(floorf(x), 0), ImVec2(floorf(x) + w + 1, h));
         }
-        else
-        {
-            u = viewAspect / imageAspect;
-        }
-        const float t = float(ImGui::GetTime());
-        const float zoom = 1.f + 0.035f * (0.5f - 0.5f * cosf(t * 2.f * 3.14159f / 90.f));
-        u /= zoom;
-        v /= zoom;
-        const float cx = 0.5f + (1.f - u) * 0.25f * sinf(t * 2.f * 3.14159f / 120.f);
-        const float cy = 0.5f;
+    }
+
+    // the sun stays put low on the left while the clouds pass in front of its glow
+    const ImVec2 sun(rectMin.x + rectW * 0.16f, horizonY - rectH * 0.08f);
+    for (int i = 32; i > 0; i--)
+    {
+        const float r = rectH * 0.019f * i;
+        dl->AddCircleFilled(sun, r, IM_COL32(255, 196, 128, 4), 96);
+    }
+
+    if (s_foreground.texture != nullptr)
+    {
         dl->AddImage(
-            s_background,
-            ImVec2(0, 0),
-            size,
-            ImVec2(cx - u / 2, cy - v / 2),
-            ImVec2(cx + u / 2, cy + v / 2));
+            s_foreground.texture, rectMin, ImVec2(rectMin.x + rectW, rectMin.y + rectH));
     }
 
     // darken the top a little and the bottom a lot, so text stays readable on any art
