@@ -285,6 +285,7 @@ set(crossuo_src
   Platform.cpp
   Config.cpp
   LoginServers.cpp
+  CharacterRoster.cpp
 )
 
 set(XUO_DIR ${PROJECT_SOURCE_DIR}/src/)

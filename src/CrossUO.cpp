@@ -161,6 +161,7 @@
 #include <external/popts.h>
 #include "Renderer/RenderAPI.h"
 #include "LoginServers.h"
+#include "CharacterRoster.h"
 
 extern po::parser g_cli;
 
@@ -585,6 +586,7 @@ void CGame::Uninstall()
 {
     Info(Client, "CGame::Uninstall()");
     SaveLocalConfig(g_PacketManager.ConfigSerial);
+    Roster_EndSession();
     g_MainScreen.Save();
     SaveGlobalConfig();
     LoginServers_Save();
@@ -628,9 +630,9 @@ void CGame::InitScreen(GAME_STATE state)
     {
         CMainScreen::UseModernWindow(); // character creation is an overlay screen
     }
-    else if (state >= GS_CHARACTER && state <= GS_GAME_CONNECT)
+    else if (state >= GS_SERVER && state <= GS_GAME_CONNECT && !Overlay_SceneActive())
     {
-        // from the character list on (until the game), the screens are classic gumps
+        // builds without the overlay keep the classic fixed-size screens
         CMainScreen::UseClassicWindow();
     }
     g_SelectedObject.Clear();
@@ -950,6 +952,7 @@ void CGame::Process(bool rendering)
     {
         return;
     }
+    Roster_Tick();
 
     g_MouseManager.Update();
 
@@ -1725,7 +1728,8 @@ void CGame::LoginComplete(bool reload)
 
     if (load && g_Player != nullptr)
     {
-        astr_t title = "Ultima Online - " + g_Player->GetName();
+        Roster_BeginSession();
+        astr_t title = astr_t(CLIENT_TITLE " \xE2\x80\x94 ") + g_Player->GetName();
         CServer *server = g_ServerList.GetSelectedServer();
         if (server != nullptr)
         {
@@ -5740,6 +5744,7 @@ void CGame::LogOut()
 {
     Info(Client, "CGame::LogOut->Start");
     SaveLocalConfig(g_PacketManager.ConfigSerial);
+    Roster_EndSession();
 
     if (g_SendLogoutNotification)
     {

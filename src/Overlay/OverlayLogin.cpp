@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <map>
 #include <string>
 #include <external/gfx/imgui/imgui.h>
 #include <external/gfx/imgui/imgui_stdlib.h>
@@ -22,6 +23,10 @@
 #include "../Config.h"
 #include "../LoginServers.h"
 #include "../ServerList.h"
+#include "../CharacterList.h"
+#include "../CharacterRoster.h"
+#include "../Network/Packets.h"
+#include "../ScreenStages/CharacterListScreen.h"
 #include "../ScreenStages/ServerScreen.h"
 #include "../Platform.h"
 #include "../GUI/GUICheckbox.h"
@@ -224,18 +229,34 @@ static void draw_status(const ImVec2 &pos, float width, float height, float pad,
     ImFont *body = Overlay_LoginFont(LoginFont::Body);
     ImFont *small = Overlay_LoginFont(LoginFont::Small);
     ImDrawList *dl = ImGui::GetWindowDrawList();
-    const bool lost = g_ConnectionScreen.GetType() == CST_CONLOST;
-    const bool failed = g_ConnectionScreen.GetConnectionFailed();
+    const auto type = g_ConnectionScreen.GetType();
+    const bool lost = type == CST_CONLOST;
+    // game-login messages are always answers to a request; delete has no waiting state here
+    const bool failed = g_ConnectionScreen.GetConnectionFailed() || type == CST_GAME_LOGIN ||
+                        type == CST_CHARACTER_LIST;
     const bool waiting = !lost && !failed;
+    // past the shard: errors lead back to the character list rather than to the login
+    const bool characterStep = type == CST_GAME || type == CST_GAME_LOGIN || type == CST_CHARACTER_LIST;
     const float innerW = width - pad * 2;
 
     // which server (or shard), at the top
     const auto &servers = LoginServers_List();
     const int active = LoginServers_Active();
     CServer *shard = g_GameState == GS_SERVER_CONNECT ? g_ServerList.GetSelectedServer() : nullptr;
-    if (shard != nullptr || (active >= 0 && active < int(servers.size())))
+    std::string character;
+    if (g_GameState == GS_GAME_CONNECT)
     {
-        std::string label = shard != nullptr ? shard->Name : LoginServers_DisplayName(servers[active]);
+        character = g_CharacterList.LastCharacterName;
+    }
+    else if (g_GameState == GS_DELETE)
+    {
+        character = g_CharacterList.GetSelectedName();
+    }
+    if (!character.empty() || shard != nullptr || (active >= 0 && active < int(servers.size())))
+    {
+        std::string label = !character.empty() ? character :
+                            shard != nullptr  ? shard->Name :
+                                                LoginServers_DisplayName(servers[active]);
         std::transform(label.begin(), label.end(), label.begin(), ::toupper);
         Overlay_TextWrappedCentered(dl, small, pos.x + pad, innerW, pos.y + pad, COL_MUTED, label.c_str());
     }
@@ -252,7 +273,7 @@ static void draw_status(const ImVec2 &pos, float width, float height, float pad,
     {
         Overlay_AlertIcon(dl, iconC, iconR, lost ? COL_MUTED : IM_COL32(248, 113, 113, 255), u);
     }
-    const astr_t message = lost ? astr_t("Connection lost") : g_ConnectionScreen.LoginMessage();
+    const astr_t message = g_ConnectionScreen.Message();
     Overlay_TextWrappedCentered(
         dl, body, pos.x + pad, innerW, iconC.y + iconR + 18.f * u, COL_TEXT, message.c_str());
 
@@ -271,6 +292,15 @@ static void draw_status(const ImVec2 &pos, float width, float height, float pad,
             Overlay_Later([] {
                 g_ConnectionManager.Disconnect();
                 g_ConnectionScreen.CreateSmoothAction(CConnectionScreen::ID_SMOOTH_CS_GO_SCREEN_MAIN);
+            });
+        }
+    }
+    else if (characterStep)
+    {
+        if (Overlay_CardButton("Back to Characters", ImVec2(innerW, buttonH), true) || enter || escape)
+        {
+            Overlay_Later([] {
+                g_ConnectionScreen.CreateSmoothAction(CConnectionScreen::ID_SMOOTH_CS_GO_SCREEN_CHARACTER);
             });
         }
     }
@@ -327,7 +357,8 @@ static void draw_card(const ImVec2 &display, float x0, float contentW, float u)
         IM_COL32(255, 255, 255, 0));
     dl->AddRect(pos, end, IM_COL32(255, 255, 255, 38), r, ImDrawCornerFlags_All, 1.f);
 
-    if (g_GameState == GS_MAIN_CONNECT || g_GameState == GS_SERVER_CONNECT)
+    if (g_GameState == GS_MAIN_CONNECT || g_GameState == GS_SERVER_CONNECT || g_GameState == GS_DELETE ||
+        g_GameState == GS_GAME_CONNECT)
     {
         draw_status(pos, width, height, pad, u);
         return;
@@ -1238,6 +1269,420 @@ static void draw_shards(const ImVec2 &display, float u)
     ImGui::PopFont();
 }
 
+// ---------------------------------------------------------------------------------------
+// Character choice: one card per character (and "New character" for empty slots). The server
+// only sends names; class, time played and appearance come from EmmexUO's own roster.
+
+static int s_charSelected = -1; // slot in g_CharacterList
+static double s_charLastClick = 0;
+static int s_charLastClickSlot = -1;
+static int s_charDeleting = -1; // slot being confirmed for deletion
+static std::string s_charDeleteTyped;
+static std::string s_charPendingDelete; // asked the server; forget it locally once it's gone
+static std::map<std::string, OverlayImage> s_charDolls; // by name + layers
+static std::map<std::string, OverlayImage> s_charPortraits;
+
+static const OverlayImage &class_portrait(const std::string &key)
+{
+    const std::string k = key.empty() ? "advanced" : key;
+    auto it = s_charPortraits.find(k);
+    if (it == s_charPortraits.end())
+    {
+        OverlayImage image = Overlay_LoadImage(("create/classes/" + k + ".jpg").c_str());
+        if (image.texture == nullptr)
+        {
+            image = Overlay_LoadImage("create/classes/advanced.jpg");
+        }
+        it = s_charPortraits.emplace(k, image).first;
+    }
+    return it->second;
+}
+
+static const OverlayImage *character_doll(const RosterCharacter &c)
+{
+    if (c.Layers.empty())
+    {
+        return nullptr;
+    }
+    std::string key = c.Name;
+    for (const auto &l : c.Layers)
+    {
+        key += "," + std::to_string(l.Gump) + ":" + std::to_string(l.Hue) + (l.PartialHue ? "p" : "");
+    }
+    auto it = s_charDolls.find(key);
+    if (it == s_charDolls.end())
+    {
+        std::vector<GumpLayer> layers;
+        for (const auto &l : c.Layers)
+        {
+            layers.push_back({ l.Gump, l.Hue, l.PartialHue });
+        }
+        it = s_charDolls.emplace(key, Overlay_ComposeGumps(layers, true)).first;
+    }
+    return it->second.texture != nullptr ? &it->second : nullptr;
+}
+
+static std::string played_text(const RosterCharacter &c)
+{
+    char buf[96];
+    const long long h = c.PlayedSeconds / 3600;
+    const long long m = (c.PlayedSeconds / 60) % 60;
+    std::string played = h > 0 ? std::to_string(h) + "h " + std::to_string(m) + "m" : std::to_string(m) + "m";
+    const long long ago = c.LastPlayed > 0 ? (long long)(time(nullptr) - c.LastPlayed) : -1;
+    std::string when;
+    if (ago < 0)
+        when = "";
+    else if (ago < 3600)
+        when = "just now";
+    else if (ago < 86400)
+        when = std::to_string(ago / 3600) + "h ago";
+    else if (ago < 86400 * 2)
+        when = "yesterday";
+    else
+        when = std::to_string(ago / 86400) + " days ago";
+    snprintf(buf, sizeof(buf), "Played %s%s%s", played.c_str(), when.empty() ? "" : "  \xC2\xB7  ", when.c_str());
+    return buf;
+}
+
+static void play_character(int slot)
+{
+    if (busy())
+    {
+        return;
+    }
+    g_CharacterList.Selected = slot;
+    Overlay_Later([] { g_CharacterListScreen.CreateSmoothAction(CCharacterListScreen::SelectCharacter); });
+}
+
+static void draw_character_card(int slot, const ImVec2 &p, float cardW, float cardH, float u)
+{
+    ImFont *title = Overlay_LoginFont(LoginFont::Title);
+    ImFont *body = Overlay_LoginFont(LoginFont::Body);
+    ImFont *small = Overlay_LoginFont(LoginFont::Small);
+    ImDrawList *cl = ImGui::GetWindowDrawList();
+    const std::string name = g_CharacterList.GetName(slot);
+    const bool sel = slot == s_charSelected;
+    const ImVec2 e(p.x + cardW, p.y + cardH);
+    const float pad = 16.f * u;
+
+    ImGui::SetCursorScreenPos(p);
+    ImGui::PushID(slot);
+    const bool deleting = s_charDeleting == slot;
+    if (!deleting && ImGui::InvisibleButton("##char", ImVec2(cardW, cardH)))
+    {
+        const double now = ImGui::GetTime();
+        if (s_charLastClickSlot == slot && now - s_charLastClick < 0.4)
+        {
+            play_character(slot);
+        }
+        s_charSelected = slot;
+        s_charLastClick = now;
+        s_charLastClickSlot = slot;
+    }
+    const bool hov = !deleting && ImGui::IsItemHovered();
+    Overlay_GlassPanel(cl, p, e, 12.f * u, u);
+    if (sel)
+    {
+        cl->AddRectFilled(p, e, IM_COL32(214, 176, 104, 24), 12.f * u);
+        cl->AddRect(p, e, IM_COL32(214, 176, 104, 200), 12.f * u, ImDrawCornerFlags_All, 1.5f);
+    }
+    else if (hov)
+    {
+        cl->AddRect(p, e, IM_COL32(255, 255, 255, 90), 12.f * u, ImDrawCornerFlags_All, 1.f);
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    }
+
+    const RosterCharacter *record = Roster_Find(name);
+    // the character on a pool of light, with their class portrait in the corner
+    const float stageH = cardH * 0.5f;
+    const ImVec2 floorC(p.x + cardW / 2, p.y + stageH);
+    for (int i = 8; i > 0; i--)
+    {
+        cl->AddCircleFilled(ImVec2(floorC.x, floorC.y - stageH * 0.35f), cardW * 0.045f * i, IM_COL32(255, 214, 150, 5), 40);
+    }
+    const OverlayImage *doll = record != nullptr ? character_doll(*record) : nullptr;
+    if (doll != nullptr)
+    {
+        const float scale = std::min((stageH - pad) / doll->height, (cardW * 0.6f) / doll->width);
+        const float w = doll->width * scale;
+        const float h = doll->height * scale;
+        cl->AddImage(doll->texture, ImVec2(floorC.x - w / 2, floorC.y - h), ImVec2(floorC.x + w / 2, floorC.y));
+    }
+    const OverlayImage &portrait = class_portrait(record != nullptr ? record->Profession : std::string());
+    const float pr = doll != nullptr ? 44.f * u : stageH - pad * 2;
+    const ImVec2 pp = doll != nullptr ? ImVec2(p.x + pad, p.y + pad) : ImVec2(floorC.x - pr / 2, p.y + pad);
+    if (portrait.texture != nullptr)
+    {
+        cl->AddImageRounded(portrait.texture, pp, ImVec2(pp.x + pr, pp.y + pr), ImVec2(0, 0), ImVec2(1, 1),
+                            record != nullptr ? IM_COL32_WHITE : IM_COL32(255, 255, 255, 120), 10.f * u);
+        cl->AddRect(pp, ImVec2(pp.x + pr, pp.y + pr), IM_COL32(255, 255, 255, 40), 10.f * u);
+    }
+
+    // name, class, skills, time
+    float y = p.y + stageH + 10.f * u;
+    const float ts = Overlay_px(title) * 0.46f;
+    const float nw = title->CalcTextSizeA(ts, FLT_MAX, 0.f, name.c_str()).x;
+    cl->AddText(title, ts, ImVec2(floorf(p.x + (cardW - nw) / 2), y), sel ? COL_GOLD : COL_TEXT, name.c_str());
+    y += ts + 8.f * u;
+    if (deleting)
+    {
+        // confirm: type the name
+        const std::string prompt = "Type " + name + " to delete";
+        Overlay_TextCentered(cl, small, y, p.x, cardW, IM_COL32(248, 113, 113, 255), prompt.c_str());
+        y += Overlay_px(small) + 8.f * u;
+        ImGui::SetCursorScreenPos(ImVec2(p.x + pad, y));
+        ImGui::PushItemWidth(cardW - pad * 2);
+        ImGui::PushFont(body);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.f * u);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10.f * u, 8.f * u));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.f, 0.f, 0.f, 0.45f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4(COL_TEXT));
+        if (ImGui::IsWindowAppearing() || !ImGui::IsAnyItemActive())
+        {
+            ImGui::SetKeyboardFocusHere();
+        }
+        ImGui::InputTextWithHint("##confirm", name.c_str(), &s_charDeleteTyped);
+        const float bh = Overlay_px(body) + 16.f * u;
+        const float half = (cardW - pad * 2 - 8.f * u) / 2;
+        ImGui::SetCursorScreenPos(ImVec2(p.x + pad, e.y - pad - bh));
+        if (Overlay_CardButton("Cancel", ImVec2(half, bh), false) ||
+            ImGui::IsKeyPressed(ImGui::GetIO().KeyMap[ImGuiKey_Escape], false))
+        {
+            s_charDeleting = -1;
+        }
+        ImGui::SameLine(0, 8.f * u);
+        const bool match = s_charDeleteTyped == name;
+        ImGui::PushStyleColor(ImGuiCol_Button, match ? ImVec4(0.86f, 0.30f, 0.30f, 1.f) : ImVec4(0.5f, 0.2f, 0.2f, 0.5f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, match ? ImVec4(0.93f, 0.38f, 0.38f, 1.f) : ImVec4(0.5f, 0.2f, 0.2f, 0.5f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.75f, 0.24f, 0.24f, 1.f));
+        if (ImGui::Button("Delete", ImVec2(half, bh)) && match)
+        {
+            s_charDeleting = -1;
+            s_charPendingDelete = name;
+            g_CharacterList.Selected = slot;
+            Overlay_Later([slot] { CPacketDeleteCharacter(slot).Send(); });
+        }
+        ImGui::PopStyleColor(5);
+        ImGui::PopStyleVar(2);
+        ImGui::PopFont();
+        ImGui::PopItemWidth();
+        ImGui::PopID();
+        return;
+    }
+    if (record != nullptr && !record->TopSkills.empty())
+    {
+        const std::string cls = Roster_ProfessionTitle(record->Profession);
+        Overlay_TextCentered(cl, body, y, p.x, cardW, COL_GOLD, cls.c_str());
+        y += Overlay_px(body) + 6.f * u;
+        std::string skills;
+        for (size_t i = 0; i < record->TopSkills.size(); i++)
+        {
+            char one[64];
+            snprintf(one, sizeof(one), "%s%s %.0f", i ? "  \xC2\xB7  " : "", record->TopSkills[i].Name.c_str(), record->TopSkills[i].Value);
+            skills += one;
+        }
+        Overlay_TextWrappedCentered(cl, small, p.x + pad, cardW - pad * 2, y, COL_MUTED, skills.c_str());
+    }
+    const std::string footer = record != nullptr ? played_text(*record) : std::string("Not played on this Mac yet");
+    Overlay_TextCentered(cl, small, e.y - pad - Overlay_px(small), p.x, cardW, COL_MUTED, footer.c_str());
+
+    // delete, on the selected card
+    if (sel)
+    {
+        const char *del = "Delete";
+        const float dw = small->CalcTextSizeA(Overlay_px(small), FLT_MAX, 0.f, del).x;
+        const ImVec2 dp(e.x - pad - dw, p.y + pad);
+        ImGui::SetCursorScreenPos(dp);
+        if (ImGui::InvisibleButton("##del", ImVec2(dw, Overlay_px(small))))
+        {
+            s_charDeleting = slot;
+            s_charDeleteTyped.clear();
+        }
+        const bool dh = ImGui::IsItemHovered();
+        cl->AddText(small, Overlay_px(small), dp, dh ? IM_COL32(248, 113, 113, 255) : IM_COL32(248, 113, 113, 150), del);
+        if (dh)
+        {
+            ImGui::SetTooltip("Permanently delete %s", name.c_str());
+        }
+    }
+    ImGui::PopID();
+}
+
+static void draw_new_card(const ImVec2 &p, float cardW, float cardH, float u)
+{
+    ImFont *body = Overlay_LoginFont(LoginFont::Body);
+    ImDrawList *cl = ImGui::GetWindowDrawList();
+    const ImVec2 e(p.x + cardW, p.y + cardH);
+    ImGui::SetCursorScreenPos(p);
+    const bool pressed = ImGui::InvisibleButton("##newchar", ImVec2(cardW, cardH));
+    const bool hov = ImGui::IsItemHovered();
+    cl->AddRectFilled(p, e, hov ? IM_COL32(18, 20, 28, 150) : IM_COL32(18, 20, 28, 100), 12.f * u);
+    // dashed outline
+    const ImU32 col = hov ? COL_GOLD : IM_COL32(255, 255, 255, 70);
+    const float dash = 8.f * u;
+    for (float x = p.x + 12.f * u; x < e.x - 12.f * u; x += dash * 2)
+    {
+        cl->AddLine(ImVec2(x, p.y), ImVec2(std::min(x + dash, e.x - 12.f * u), p.y), col);
+        cl->AddLine(ImVec2(x, e.y), ImVec2(std::min(x + dash, e.x - 12.f * u), e.y), col);
+    }
+    for (float y = p.y + 12.f * u; y < e.y - 12.f * u; y += dash * 2)
+    {
+        cl->AddLine(ImVec2(p.x, y), ImVec2(p.x, std::min(y + dash, e.y - 12.f * u)), col);
+        cl->AddLine(ImVec2(e.x, y), ImVec2(e.x, std::min(y + dash, e.y - 12.f * u)), col);
+    }
+    const ImVec2 c(p.x + cardW / 2, p.y + cardH * 0.42f);
+    const float r = 28.f * u;
+    cl->AddCircleFilled(c, r, hov ? IM_COL32(232, 196, 128, 255) : COL_GOLD, 40);
+    const ImU32 ink = IM_COL32(26, 20, 12, 255);
+    cl->AddLine(ImVec2(c.x - r * 0.4f, c.y), ImVec2(c.x + r * 0.4f, c.y), ink, 2.6f * u);
+    cl->AddLine(ImVec2(c.x, c.y - r * 0.4f), ImVec2(c.x, c.y + r * 0.4f), ink, 2.6f * u);
+    Overlay_TextCentered(cl, body, c.y + r + 16.f * u, p.x, cardW, hov ? COL_GOLD : COL_TEXT, "New character");
+    if (hov)
+    {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    }
+    if (pressed && !busy())
+    {
+        Overlay_Later([] { g_CharacterListScreen.CreateSmoothAction(CCharacterListScreen::GotoScreenProfession); });
+    }
+}
+
+static void draw_characters(const ImVec2 &display, float u)
+{
+    ImFont *title = Overlay_LoginFont(LoginFont::Title);
+    ImFont *body = Overlay_LoginFont(LoginFont::Body);
+    ImFont *small = Overlay_LoginFont(LoginFont::Small);
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+
+    // slots with characters, then one "New character" card if there's room
+    std::vector<int> slots;
+    bool freeSlot = false;
+    for (int i = 0; i < g_CharacterList.Count; i++)
+    {
+        if (!g_CharacterList.GetName(i).empty())
+        {
+            slots.push_back(i);
+        }
+        else
+        {
+            freeSlot = true;
+        }
+    }
+    // a deletion the server accepted: the name is gone from the list
+    if (!s_charPendingDelete.empty())
+    {
+        bool still = false;
+        for (int i : slots)
+        {
+            still |= g_CharacterList.GetName(i) == s_charPendingDelete;
+        }
+        if (!still)
+        {
+            Roster_Forget(s_charPendingDelete);
+            s_charPendingDelete.clear();
+        }
+    }
+    const bool canCreate = freeSlot && !g_CharacterList.SingleSlot;
+    if (std::find(slots.begin(), slots.end(), s_charSelected) == slots.end())
+    {
+        s_charSelected = slots.empty() ? -1 : slots[0];
+        for (int i : slots)
+        {
+            if (g_CharacterList.GetName(i) == g_CharacterList.LastCharacterName)
+            {
+                s_charSelected = i;
+            }
+        }
+    }
+
+    // heading
+    const float top = std::max(display.y * 0.14f, 80.f * u);
+    const char *heading = "Choose your character";
+    const float hs = Overlay_px(title) * 0.5f;
+    const float hw = title->CalcTextSizeA(hs, FLT_MAX, 0.f, heading).x;
+    dl->AddText(title, hs, ImVec2(floorf((display.x - hw) / 2), top), COL_TEXT, heading);
+    std::string where = g_ServerList.LastServerName;
+    const auto &servers = LoginServers_List();
+    const int active = LoginServers_Active();
+    if (active >= 0 && active < int(servers.size()))
+    {
+        const std::string server = LoginServers_DisplayName(servers[active]);
+        where = where.empty() || where == server ? server : server + "  \xC2\xB7  " + where;
+    }
+    Overlay_TextCentered(dl, small, top + hs + 8.f * u, 0, display.x, COL_MUTED, where.c_str());
+
+    // cards
+    const float cardW = 260.f * u;
+    const float cardH = 330.f * u;
+    const float gap = 16.f * u;
+    const int count = int(slots.size()) + (canCreate ? 1 : 0);
+    const float footerH = Overlay_px(body) + 22.f * u;
+    const float areaTop = top + hs + Overlay_px(small) + 28.f * u;
+    const float areaBottom = display.y - 70.f * u - footerH;
+    const int perRow = std::max(1, std::min(count, int((display.x - 80.f * u + gap) / (cardW + gap))));
+    const float rowW = perRow * cardW + (perRow - 1) * gap;
+    const float areaX = floorf((display.x - rowW) / 2);
+    ImGui::SetCursorScreenPos(ImVec2(areaX, areaTop));
+    ImGui::BeginChild("##characters", ImVec2(rowW + 14.f * u, std::max(cardH + 8.f * u, areaBottom - areaTop)), false);
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    for (int k = 0; k < count; k++)
+    {
+        const ImVec2 p(origin.x + (k % perRow) * (cardW + gap), origin.y + (k / perRow) * (cardH + gap));
+        if (k < int(slots.size()))
+        {
+            draw_character_card(slots[k], p, cardW, cardH, u);
+        }
+        else
+        {
+            draw_new_card(p, cardW, cardH, u);
+        }
+    }
+    ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + ((count + perRow - 1) / perRow) * (cardH + gap)));
+    ImGui::Dummy(ImVec2(rowW, 0));
+    ImGui::EndChild();
+
+    // keyboard (not while typing a confirmation)
+    const ImGuiIO &io = ImGui::GetIO();
+    if (s_charDeleting < 0 && !slots.empty())
+    {
+        const int pos = int(std::find(slots.begin(), slots.end(), s_charSelected) - slots.begin());
+        if (ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_RightArrow]) || ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_DownArrow]))
+        {
+            s_charSelected = slots[std::min(int(slots.size()) - 1, pos + 1)];
+        }
+        if (ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_LeftArrow]) || ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_UpArrow]))
+        {
+            s_charSelected = slots[std::max(0, pos - 1)];
+        }
+    }
+
+    // footer: back and play
+    const float by = display.y - 70.f * u - footerH + 20.f * u;
+    const float backW = 140.f * u;
+    const std::string go = s_charSelected >= 0 ? "Play " + g_CharacterList.GetName(s_charSelected) : std::string("Play");
+    const float goW = std::max(220.f * u, body->CalcTextSizeA(Overlay_px(body), FLT_MAX, 0.f, go.c_str()).x + 60.f * u);
+    const float total = backW + 12.f * u + goW;
+    ImGui::PushFont(body);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.f * u);
+    ImGui::SetCursorScreenPos(ImVec2(floorf((display.x - total) / 2), by));
+    const bool typing = s_charDeleting >= 0;
+    if (Overlay_CardButton("Back", ImVec2(backW, footerH), false) ||
+        (!typing && ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_Escape], false)))
+    {
+        // back to the shards: the client signs in again to list them
+        Overlay_Later([] { g_CharacterListScreen.CreateSmoothAction(CCharacterListScreen::Connect); });
+    }
+    ImGui::SameLine(0, 12.f * u);
+    if ((Overlay_CardButton(go.c_str(), ImVec2(goW, footerH), true) ||
+         (!typing && ImGui::IsKeyPressed(io.KeyMap[ImGuiKey_Enter], false))) &&
+        s_charSelected >= 0)
+    {
+        play_character(s_charSelected);
+    }
+    ImGui::PopStyleVar();
+    ImGui::PopFont();
+}
+
 void Overlay_DrawLogin()
 {
     const ImVec2 display = ImGui::GetIO().DisplaySize;
@@ -1269,10 +1714,13 @@ void Overlay_DrawLogin()
     const float x0 = panelW * ease;
     const float contentW = display.x - x0;
 
-    // title
+    // title (the character step needs the room for its taller cards)
     ImFont *title = Overlay_LoginFont(LoginFont::Title);
     ImFont *small = Overlay_LoginFont(LoginFont::Small);
+    const bool showTitle = g_GameState != GS_CHARACTER;
     const float titleY = std::max(display.y * 0.42f, 190.f * u) - Overlay_px(title) - 58.f * u;
+    if (showTitle)
+    {
     Overlay_TextCentered(dl, title, titleY, x0, contentW, COL_TEXT, "ULTIMA ONLINE");
     // tagline between two short gold rules
     const char *tagline = "BRITANNIA AWAITS";
@@ -1284,10 +1732,15 @@ void Overlay_DrawLogin()
     dl->AddLine(ImVec2(mid - gap - ruleW, ruleY), ImVec2(mid - gap, ruleY), ruleCol);
     dl->AddLine(ImVec2(mid + gap, ruleY), ImVec2(mid + gap + ruleW, ruleY), ruleCol);
     Overlay_TextCentered(dl, small, ruleY - Overlay_px(small) / 2 - 1.f, x0, contentW, COL_GOLD, tagline);
+    }
 
     if (g_GameState == GS_SERVER)
     {
         draw_shards(display, u);
+    }
+    else if (g_GameState == GS_CHARACTER)
+    {
+        draw_characters(display, u);
     }
     else
     {

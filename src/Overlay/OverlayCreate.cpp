@@ -212,90 +212,6 @@ static const OverlayImage &portrait(const CProfession *p)
     return it->second;
 }
 
-struct GumpLayer
-{
-    uint16_t gump;
-    uint16_t hue;
-};
-
-// Draws UO gumps on top of each other (all from the same origin, as the paperdoll does),
-// hued like the game's shader: the red channel picks a step of the hue's colour ramp.
-static OverlayImage compose_gumps(const std::vector<GumpLayer> &layers, bool crop = false)
-{
-    struct Layer
-    {
-        std::vector<uint16_t> pixels;
-        int w, h;
-        uint16_t hue;
-    };
-    std::vector<Layer> loaded;
-    int w = 0, h = 0;
-    for (const auto &l : layers)
-    {
-        if (l.gump == 0 || l.gump >= MAX_GUMP_DATA_INDEX_COUNT || g_Index.m_Gump[l.gump].Address == 0)
-        {
-            continue;
-        }
-        CIndexObject &io = g_Index.m_Gump[l.gump];
-        auto pixels = g_UOFileReader.GetGumpPixels(io);
-        if (pixels.empty())
-        {
-            continue;
-        }
-        loaded.push_back({ std::move(pixels), io.Width, io.Height, l.hue });
-        w = std::max(w, io.Width);
-        h = std::max(h, io.Height);
-    }
-    if (w == 0 || h == 0)
-    {
-        return {};
-    }
-    std::vector<uint32_t> canvas(size_t(w) * h, 0);
-    for (auto &l : loaded)
-    {
-        for (int y = 0; y < l.h; y++)
-        {
-            for (int x = 0; x < l.w; x++)
-            {
-                uint16_t c = l.pixels[size_t(y) * l.w + x];
-                if (c == 0)
-                {
-                    continue;
-                }
-                const uint32_t rgb = l.hue != 0 ? g_ColorManager.GetColor(c, l.hue) : g_ColorManager.Color16To32(c);
-                canvas[size_t(y) * w + x] = (rgb & 0x00FFFFFF) | 0xFF000000;
-            }
-        }
-    }
-    // crop to what's drawn: the paperdoll gumps carry a lot of empty space
-    int x0 = w, y0 = h, x1 = -1, y1 = -1;
-    for (int y = 0; y < h; y++)
-    {
-        for (int x = 0; x < w; x++)
-        {
-            if (canvas[size_t(y) * w + x] != 0)
-            {
-                x0 = std::min(x0, x);
-                x1 = std::max(x1, x);
-                y0 = std::min(y0, y);
-                y1 = std::max(y1, y);
-            }
-        }
-    }
-    if (!crop || x1 < 0)
-    {
-        return Overlay_CreateImage(w, h, (const uint8_t *)canvas.data());
-    }
-    const int cw = x1 - x0 + 1;
-    const int ch = y1 - y0 + 1;
-    std::vector<uint32_t> cropped(size_t(cw) * ch);
-    for (int y = 0; y < ch; y++)
-    {
-        std::copy_n(&canvas[size_t(y + y0) * w + x0], cw, &cropped[size_t(y) * cw]);
-    }
-    return Overlay_CreateImage(cw, ch, (const uint8_t *)cropped.data());
-}
-
 static void update_preview()
 {
     auto &m = g_CreateCharacterManager;
@@ -322,7 +238,7 @@ static void update_preview()
     {
         layers.push_back({ m.GetBeard(m.BeardStyle).GumpID, m.BeardColor });
     }
-    s_preview = compose_gumps(layers, true);
+    s_preview = Overlay_ComposeGumps(layers, true);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -1061,7 +977,7 @@ static void draw_city_overlay(const ImVec2 &display, float u)
         if (map != s_mapIndex)
         {
             Overlay_FreeImage(s_map);
-            s_map = compose_gumps({ { uint16_t(0x15D9 + map), 0 } });
+            s_map = Overlay_ComposeGumps({ { uint16_t(0x15D9 + map), 0 } });
             s_mapIndex = map;
         }
         if (s_map.texture != nullptr)

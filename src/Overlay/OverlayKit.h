@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 #include <external/gfx/imgui/imgui.h>
 
 static const ImU32 COL_TEXT = IM_COL32(236, 230, 218, 255);
@@ -32,6 +33,16 @@ OverlayImage Overlay_CreateImage(int width, int height, const uint8_t *rgba);
 void Overlay_FreeImage(OverlayImage &image);
 // Draws an image scaled to cover the rectangle (cropping the overflow).
 void Overlay_DrawCover(ImDrawList *dl, const OverlayImage &image, const ImVec2 &min, const ImVec2 &max, ImU32 tint = IM_COL32_WHITE);
+
+struct GumpLayer
+{
+    int gump;
+    uint16_t hue;
+    bool partial = false; // hue only the grey pixels (cloth dyes, skin on bodies)
+};
+// UO gumps drawn over each other from one origin (as the paperdoll does) and hued like the
+// game's shader; crop trims the empty space around what's drawn.
+OverlayImage Overlay_ComposeGumps(const std::vector<GumpLayer> &layers, bool crop = false);
 
 // A looping MPEG-1 video (pl_mpeg) shown as an overlay image.
 struct OverlayVideo

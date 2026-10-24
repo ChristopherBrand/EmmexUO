@@ -48,8 +48,11 @@ bool Overlay_LoginActive()
     // to it all show on the login screen too
     const bool loginType = g_ConnectionScreen.GetType() == CST_LOGIN ||
                            g_ConnectionScreen.GetType() == CST_CONLOST;
-    return g_GameState == GS_MAIN || g_GameState == GS_SERVER ||
-           ((g_GameState == GS_MAIN_CONNECT || g_GameState == GS_SERVER_CONNECT) && loginType);
+    const auto type = g_ConnectionScreen.GetType();
+    return g_GameState == GS_MAIN || g_GameState == GS_SERVER || g_GameState == GS_CHARACTER ||
+           ((g_GameState == GS_MAIN_CONNECT || g_GameState == GS_SERVER_CONNECT) && loginType) ||
+           (g_GameState == GS_DELETE && type == CST_CHARACTER_LIST) ||
+           (g_GameState == GS_GAME_CONNECT && type != CST_SELECT_PROFESSOIN);
 }
 
 // Character creation (profession, appearance and starting city) as one overlay screen.

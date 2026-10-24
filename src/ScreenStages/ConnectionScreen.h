@@ -66,6 +66,8 @@ public:
     // Login (CST_LOGIN) status or error text: "Connecting...", "Verifying Account..." or why
     // the login server refused.
     astr_t LoginMessage() const;
+    // The status or error text for the current connection screen type.
+    astr_t Message() const;
 
     virtual void Init() override;
     virtual void ProcessSmoothAction(uint8_t action = 0xFF) override;

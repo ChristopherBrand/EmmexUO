@@ -9,6 +9,7 @@
 #include "../GameWindow.h"
 #include "../CharacterList.h"
 #include "../Managers/ScreenEffectManager.h"
+#include "revision.h" // after the other headers: CLIENT_VERSION clashes with an enum
 
 CCharacterListScreen g_CharacterListScreen;
 
@@ -20,11 +21,11 @@ CCharacterListScreen::CCharacterListScreen()
 void CCharacterListScreen::Init()
 {
     CBaseScreen::Init();
-    auto title = astr_t("Ultima Online - ") + g_MainScreen.m_Account->GetTextA();
+    auto title = astr_t(CLIENT_TITLE " \xE2\x80\x94 ") + g_MainScreen.m_Account->GetTextA();
     CServer *server = g_ServerList.GetSelectedServer();
     if (server != nullptr)
     {
-        title += "(" + server->Name + ")";
+        title += " (" + server->Name + ")";
     }
 
     g_GameWindow.SetTitle(title);

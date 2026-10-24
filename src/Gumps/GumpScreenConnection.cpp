@@ -51,32 +51,7 @@ void CGumpScreenConnection::UpdateContent()
     {
         if (g_ConnectionScreen.GetConnectionFailed())
         {
-            const astr_t text[6] = {
-                g_ClilocManager.Cliloc(g_Language)
-                    ->GetA(3000018, false, "That character password is invalid."),
-                g_ClilocManager.Cliloc(g_Language)
-                    ->GetA(3000019, false, "That character does not exist."),
-                g_ClilocManager.Cliloc(g_Language)
-                    ->GetA(3000020, false, "That character is being played right now."),
-                g_ClilocManager.Cliloc(g_Language)
-                    ->GetA(
-                        3000021,
-                        false,
-                        "That character is not old enough to delete. The character must be 7 days old before it can be deleted."),
-                g_ClilocManager.Cliloc(g_Language)
-                    ->GetA(
-                        3000022,
-                        false,
-                        "That character is currently queued for backup and cannot be deleted."),
-                g_ClilocManager.Cliloc(g_Language)
-                    ->GetA(3000023, false, "Couldn't carry out your request.")
-            };
-            int index = g_ConnectionScreen.GetErrorCode();
-            if (index >= 6)
-            {
-                index = 5;
-            }
-            CreateText(189, 178, text[index], 2);
+            CreateText(189, 178, g_ConnectionScreen.Message(), 2);
 
             Add(new CGUIButton(ID_CS_OK, 0x0481, 0x0482, 0x0483, 306, 304));
         }
@@ -95,22 +70,7 @@ void CGumpScreenConnection::UpdateContent()
     {
         if (g_ConnectionScreen.GetConnectionFailed())
         {
-            const astr_t text[3] = {
-                g_ClilocManager.Cliloc(g_Language)
-                    ->GetA(
-                        3000033,
-                        false,
-                        "Either the Account Name or Password you provided were incorrect. If this is a new account your account may not be active yet. Please try again shortly."),
-                g_ClilocManager.Cliloc(g_Language)
-                    ->GetA(3000612, false, "Your character name is too short."),
-                "No character to login with."
-            };
-            int index = g_ConnectionScreen.GetErrorCode();
-            if (index >= 3)
-            {
-                index = 2;
-            }
-            CreateText(189, 178, text[index], 2);
+            CreateText(189, 178, g_ConnectionScreen.Message(), 2);
 
             Add(new CGUIButton(ID_CS_OK, 0x0481, 0x0482, 0x0483, 306, 304));
         }
@@ -127,49 +87,7 @@ void CGumpScreenConnection::UpdateContent()
     }
     else if (g_ConnectionScreen.GetType() == CST_GAME_LOGIN)
     {
-        const astr_t text[10] = {
-            g_ClilocManager.Cliloc(g_Language)->GetA(3000007, false, "Incorrect password."),
-            g_ClilocManager.Cliloc(g_Language)
-                ->GetA(
-                    3000009,
-                    false,
-                    "This character does not exist anymore.  You will have to recreate it."),
-            g_ClilocManager.Cliloc(g_Language)
-                ->GetA(3000006, false, "This character already exists.\nPlaying..."),
-            g_ClilocManager.Cliloc(g_Language)
-                ->GetA(
-                    3000016,
-                    false,
-                    "The client could not attach to the game server. It must have been taken down, please wait a few minutes and try again."),
-            g_ClilocManager.Cliloc(g_Language)
-                ->GetA(
-                    3000017,
-                    false,
-                    "The client could not attach to the game server. It must have been taken down, please wait a few minutes and try again."),
-            g_ClilocManager.Cliloc(g_Language)
-                ->GetA(
-                    3000012,
-                    false,
-                    "Another character from this account is currently online in this world.  You must either log in as that character or wait for it to time out."),
-            g_ClilocManager.Cliloc(g_Language)
-                ->GetA(
-                    3000013,
-                    false,
-                    "An error has occurred in the synchronization between the login servers and this world.  Please close your client and try again."),
-            g_ClilocManager.Cliloc(g_Language)
-                ->GetA(
-                    3000005,
-                    false,
-                    "You have been idle for too long.  If you do not do anything in the next minute, you will be logged out."),
-            "",
-            ""
-        };
-        int index = g_ConnectionScreen.GetErrorCode();
-        if (index >= 10)
-        {
-            index = 9;
-        }
-        CreateText(189, 178, text[index], 2);
+        CreateText(189, 178, g_ConnectionScreen.Message(), 2);
 
         Add(new CGUIButton(ID_CS_OK, 0x0481, 0x0482, 0x0483, 306, 304));
     }

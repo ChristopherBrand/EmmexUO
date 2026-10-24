@@ -24,6 +24,7 @@
 #include "../Managers/ColorManager.h"
 #include "../TextEngine/TextData.h"
 #include "../Renderer/RenderAPI.h"
+#include "revision.h" // after the other headers: CLIENT_VERSION clashes with an enum
 
 static int s_objectHandleOffsetY = 25;
 static int s_bodyHandleOffsetY = 15;
@@ -104,7 +105,7 @@ void CGameObject::SetName(const astr_t &newName)
     {
         if (g_GameState >= GS_GAME)
         {
-            astr_t title = "Ultima Online - " + newName;
+            astr_t title = astr_t(CLIENT_TITLE " \xE2\x80\x94 ") + newName;
             CServer *server = g_ServerList.GetSelectedServer();
             if (server != nullptr)
             {
