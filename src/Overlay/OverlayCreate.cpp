@@ -55,6 +55,11 @@ static int s_stat[3] = {}; // str, dex, int
 
 static OverlayImage s_preview;
 static std::string s_previewKey;
+// A swatch the pointer is over: the preview shows it until the pointer moves on.
+static uint16_t *s_hoverTarget = nullptr;
+static uint16_t s_hoverValue = 0;
+static uint16_t *s_hoverTargetNext = nullptr;
+static uint16_t s_hoverValueNext = 0;
 
 static bool s_cityOpen = false;
 static int s_city = 0;
@@ -215,9 +220,16 @@ static const OverlayImage &portrait(const CProfession *p)
 static void update_preview()
 {
     auto &m = g_CreateCharacterManager;
+    // a hovered palette swatch stands in for its value
+    auto shown = [](uint16_t &field) { return s_hoverTarget == &field ? s_hoverValue : field; };
+    const uint16_t skin = shown(m.SkinTone);
+    const uint16_t shirt = shown(m.ShirtColor);
+    const uint16_t pants = shown(m.PantsColor);
+    const uint16_t hair = shown(m.HairColor);
+    const uint16_t beard = shown(m.BeardColor);
     char key[160];
     snprintf(key, sizeof(key), "%d %d %d %d %x %x %x %x %x", int(m.GetRace()), int(m.GetFemale()),
-             m.HairStyle, m.BeardStyle, m.SkinTone, m.ShirtColor, m.PantsColor, m.HairColor, m.BeardColor);
+             m.HairStyle, m.BeardStyle, skin, shirt, pants, hair, beard);
     if (s_previewKey == key && s_preview.texture != nullptr)
     {
         return;
@@ -225,18 +237,18 @@ static void update_preview()
     s_previewKey = key;
     Overlay_FreeImage(s_preview);
     std::vector<GumpLayer> layers = {
-        { m.GetBodyGump(), m.SkinTone },
+        { m.GetBodyGump(), skin },
         { m.GetBootsGump(), 0 },
     };
     if (m.GetRace() != RT_GARGOYLE)
     {
-        layers.push_back({ m.GetPantsGump(), m.PantsColor });
+        layers.push_back({ m.GetPantsGump(), pants });
     }
-    layers.push_back({ m.GetShirtGump(), m.ShirtColor });
-    layers.push_back({ m.GetHair(m.HairStyle).GumpID, m.HairColor });
+    layers.push_back({ m.GetShirtGump(), shirt });
+    layers.push_back({ m.GetHair(m.HairStyle).GumpID, hair });
     if (!m.GetFemale() && m.GetRace() != RT_ELF)
     {
-        layers.push_back({ m.GetBeard(m.BeardStyle).GumpID, m.BeardColor });
+        layers.push_back({ m.GetBeard(m.BeardStyle).GumpID, beard });
     }
     s_preview = Overlay_ComposeGumps(layers, true);
 }
@@ -379,14 +391,57 @@ static int stepper(const char *id, const char *value, int index, int count, floa
     return result;
 }
 
-static ImU32 hue_swatch(uint16_t hue)
+// Which step of a hue's 32-step ramp a gump's pixels read as (the game hues a pixel by its red
+// channel), so a swatch looks like the coloured art rather than the middle of the ramp.
+static int ramp_step(int gump)
 {
-    return (g_ColorManager.GetPolygoneColor(16, hue) & 0x00FFFFFF) | 0xFF000000;
+    static std::map<int, int> cache;
+    if (gump <= 0 || gump >= MAX_GUMP_DATA_INDEX_COUNT || g_Index.m_Gump[gump].Address == 0)
+    {
+        return 16;
+    }
+    auto it = cache.find(gump);
+    if (it != cache.end())
+    {
+        return it->second;
+    }
+    int histogram[32] = {};
+    int total = 0;
+    for (const uint16_t c : g_UOFileReader.GetGumpPixels(g_Index.m_Gump[gump]))
+    {
+        if (c != 0)
+        {
+            histogram[(c >> 10) & 0x1F]++;
+            total++;
+        }
+    }
+    // the 70th percentile: outlines and shadows pull the median down, while the eye reads a
+    // surface by its lit areas
+    int step = 16;
+    for (int i = 0, seen = 0; i < 32 && total > 0; i++)
+    {
+        seen += histogram[i];
+        if (seen * 10 >= total * 7)
+        {
+            step = i;
+            break;
+        }
+    }
+    cache[gump] = step;
+    return step;
 }
 
+static ImU32 hue_swatch(uint16_t hue, int step = 16)
+{
+    return (g_ColorManager.GetPolygoneColor(uint16_t(step), hue) & 0x00FFFFFF) | 0xFF000000;
+}
+
+
 // A colour well that opens a palette; palette entries are hue indices stored +1.
+// A colour well that opens a palette; palette entries are hue indices stored +1. `step` is
+// the ramp step the coloured art uses (see ramp_step); `sorted` orders light to dark.
 static bool color_picker(const char *id, uint16_t &value, const uint16_t *table, int count, int columns,
-                         uint16_t minValue, uint16_t maxValue, float u)
+                         uint16_t minValue, uint16_t maxValue, float u, int step = 16, bool sorted = false)
 {
     ImGui::PushID(id);
     bool changed = false;
@@ -398,7 +453,7 @@ static bool color_picker(const char *id, uint16_t &value, const uint16_t *table,
     }
     const bool hovered = ImGui::IsItemHovered();
     ImDrawList *dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(pos, ImVec2(pos.x + well * 2.2f, pos.y + well), hue_swatch(value), 8.f * u);
+    dl->AddRectFilled(pos, ImVec2(pos.x + well * 2.2f, pos.y + well), hue_swatch(value, step), 8.f * u);
     dl->AddRect(pos, ImVec2(pos.x + well * 2.2f, pos.y + well), hovered ? COL_GOLD : IM_COL32(255, 255, 255, 60), 8.f * u, ImDrawCornerFlags_All, hovered ? 2.f : 1.f);
 
     ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y + well + 6.f * u), ImGuiCond_Appearing);
@@ -407,25 +462,48 @@ static bool color_picker(const char *id, uint16_t &value, const uint16_t *table,
     ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.07f, 0.08f, 0.11f, 0.97f));
     if (ImGui::BeginPopup("##palette"))
     {
-        const float cell = count > 200 ? 13.f * u : 24.f * u;
-        ImDrawList *pl = ImGui::GetWindowDrawList();
+        // the values a player can actually get (servers clamp human tones), once each
+        std::vector<uint16_t> entries;
         for (int i = 0; i < count; i++)
         {
-            const uint16_t stored = uint16_t((table != nullptr ? table[i] : i) + 1);
+            const uint16_t stored = std::max(minValue, std::min(maxValue, uint16_t((table != nullptr ? table[i] : i) + 1)));
+            if (std::find(entries.begin(), entries.end(), stored) == entries.end())
+            {
+                entries.push_back(stored);
+            }
+        }
+        if (sorted)
+        {
+            auto luminance = [step](uint16_t hue) {
+                const ImU32 c = hue_swatch(hue, step);
+                return 0.299f * (c & 0xFF) + 0.587f * ((c >> 8) & 0xFF) + 0.114f * ((c >> 16) & 0xFF);
+            };
+            std::stable_sort(entries.begin(), entries.end(), [&](uint16_t a, uint16_t b) { return luminance(a) > luminance(b); });
+        }
+        const float cell = entries.size() > 200 ? 13.f * u : (sorted ? 28.f * u : 24.f * u);
+        ImDrawList *pl = ImGui::GetWindowDrawList();
+        for (size_t i = 0; i < entries.size(); i++)
+        {
+            const uint16_t stored = entries[i];
             if (i % columns != 0)
             {
                 ImGui::SameLine(0, 2.f * u);
             }
-            ImGui::PushID(i);
+            ImGui::PushID(int(i));
             const ImVec2 p = ImGui::GetCursorScreenPos();
             if (ImGui::InvisibleButton("##c", ImVec2(cell, cell)))
             {
-                value = std::max(minValue, std::min(maxValue, stored));
+                value = stored;
                 changed = true;
                 ImGui::CloseCurrentPopup();
             }
             const bool h = ImGui::IsItemHovered();
-            pl->AddRectFilled(p, ImVec2(p.x + cell, p.y + cell), hue_swatch(stored), 3.f * u);
+            if (h)
+            {
+                s_hoverTargetNext = &value;
+                s_hoverValueNext = stored;
+            }
+            pl->AddRectFilled(p, ImVec2(p.x + cell, p.y + cell), hue_swatch(stored, step), 3.f * u);
             if (stored == value || h)
             {
                 pl->AddRect(p, ImVec2(p.x + cell, p.y + cell), h ? COL_GOLD : IM_COL32(255, 255, 255, 220), 3.f * u, ImDrawCornerFlags_All, 2.f);
@@ -677,13 +755,13 @@ static void draw_profession_details(float width, float u)
 // A labelled style stepper with its colour well beside it, filling the row.
 static void style_row(const char *label, const char *id, uint8_t &style, const char *styleName, int count,
                       const char *colorId, uint16_t &color, const uint16_t *palette, int paletteCount,
-                      uint16_t lo, uint16_t hi, float width, float u)
+                      uint16_t lo, uint16_t hi, int gump, float width, float u)
 {
     section_label(label);
     const float well = 34.f * u * 2.2f;
     style = uint8_t(stepper(id, styleName, style, count, width - well - 10.f * u, u));
     ImGui::SameLine(0, 10.f * u);
-    color_picker(colorId, color, palette, paletteCount, 6, lo, hi, u);
+    color_picker(colorId, color, palette, paletteCount, 6, lo, hi, u, ramp_step(gump), true);
     ImGui::Dummy(ImVec2(0, 4.f * u));
 }
 
@@ -748,12 +826,13 @@ static void draw_appearance(float width, float u)
     const uint16_t hairHi = human ? 0x047C : 0xFFFF;
 
     style_row(race == RT_GARGOYLE ? "HORNS" : "HAIR", "hair", m.HairStyle, m.GetHair(m.HairStyle).Name.c_str(),
-              m.GetCurrentHairCount(), "haircolor", m.HairColor, m.GetHairColorPtr(), hairCount, hairLo, hairHi, width, u);
+              m.GetCurrentHairCount(), "haircolor", m.HairColor, m.GetHairColorPtr(), hairCount, hairLo, hairHi,
+              m.GetHair(m.HairStyle).GumpID, width, u);
     if (!m.GetFemale() && race != RT_ELF)
     {
         style_row(race == RT_GARGOYLE ? "FACIAL HORNS" : "FACIAL HAIR", "beard", m.BeardStyle,
                   m.GetBeard(m.BeardStyle).Name.c_str(), m.GetCurrentFacialHairCount(), "beardcolor", m.BeardColor,
-                  m.GetHairColorPtr(), hairCount, hairLo, hairHi, width, u);
+                  m.GetHairColorPtr(), hairCount, hairLo, hairHi, m.GetBeard(m.BeardStyle).GumpID, width, u);
     }
 
     // skin and clothing colours side by side
@@ -761,21 +840,34 @@ static void draw_appearance(float width, float u)
     const float third = (width - gap * 2) / 3;
     ImGui::BeginGroup();
     section_label("SKIN");
-    color_picker("skin", m.SkinTone, m.GetSkinTonePtr(), skinCount, race == RT_GARGOYLE ? 7 : 8,
-                 human ? 0x03EA : 0, human ? 0x0422 : 0xFFFF, u);
+    color_picker("skin", m.SkinTone, m.GetSkinTonePtr(), skinCount, 8, human ? 0x03EA : 0, human ? 0x0422 : 0xFFFF,
+                 u, ramp_step(m.GetBodyGump()), true);
     ImGui::EndGroup();
     ImGui::SameLine(third + gap);
     ImGui::BeginGroup();
     section_label(race == RT_GARGOYLE ? "ROBE" : "SHIRT");
-    color_picker("shirt", m.ShirtColor, dyes.data(), int(dyes.size()), 20, 0, 0xFFFF, u);
+    color_picker("shirt", m.ShirtColor, dyes.data(), int(dyes.size()), 20, 0, 0xFFFF, u, ramp_step(m.GetShirtGump()));
     ImGui::EndGroup();
     if (race != RT_GARGOYLE)
     {
         ImGui::SameLine((third + gap) * 2);
         ImGui::BeginGroup();
         section_label(m.GetFemale() ? "SKIRT" : "PANTS");
-        color_picker("pants", m.PantsColor, dyes.data(), int(dyes.size()), 20, 0, 0xFFFF, u);
+        color_picker("pants", m.PantsColor, dyes.data(), int(dyes.size()), 20, 0, 0xFFFF, u, ramp_step(m.GetPantsGump()));
         ImGui::EndGroup();
+    }
+
+    if (human && g_Config.ClientVersion >= CV_4011D)
+    {
+        // servers only accept flesh tones for humans; the fantasy ones belong to other races
+        ImGui::Dummy(ImVec2(0, 4.f * u));
+        ImGui::PushFont(Overlay_LoginFont(LoginFont::Small));
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
+        ImGui::TextDisabled(g_Config.ClientVersion >= CV_60144 ?
+                                "Paler, blue or green skin? Elves and gargoyles have fantasy tones." :
+                                "Paler or silvery skin? Elves have fantasy tones.");
+        ImGui::PopTextWrapPos();
+        ImGui::PopFont();
     }
 }
 
@@ -854,6 +946,9 @@ static void draw_main(const ImVec2 &pos, const ImVec2 &size, float u)
         }
         dl->PathFillConvex(IM_COL32(0, 0, 0, 22));
     }
+    s_hoverTarget = s_hoverTargetNext; // from last frame's palettes
+    s_hoverValue = s_hoverValueNext;
+    s_hoverTargetNext = nullptr;
     update_preview();
     if (s_preview.texture != nullptr)
     {
